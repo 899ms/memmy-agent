@@ -2725,6 +2725,7 @@ export class WebSocketChannel extends BaseChannel {
     if (got === "/api/commands") return this.handleCommands(request);
     if (got === "/api/computer-history") return this.handleComputerHistory(request, "snapshot");
     if (got === "/api/computer-history/delete") return this.handleComputerHistory(request, "history-delete");
+    if (got === "/api/computer-history/pin") return this.handleComputerHistory(request, "history-pin");
     if (got === "/api/computer-history/demo-fixture") return this.handleComputerHistory(request, "demo-fixture");
     if (got === "/api/computer-history/import") return this.handleComputerHistory(request, "import");
     if (got === "/api/computer-history/observation/start") return this.handleComputerHistory(request, "observation-start");
@@ -2873,7 +2874,7 @@ export class WebSocketChannel extends BaseChannel {
 
   async handleComputerHistory(
     request: any,
-    action: "snapshot" | "history-delete" | "demo-fixture" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create" | "cua-start" | "cua-smoke",
+    action: "snapshot" | "history-delete" | "history-pin" | "demo-fixture" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create" | "cua-start" | "cua-smoke",
   ): Promise<HttpLikeResponse> {
     if (!this.checkApiToken(request)) return httpError(401, "Unauthorized");
     const method = (request.method ?? "GET").toUpperCase();
@@ -2902,6 +2903,12 @@ export class WebSocketChannel extends BaseChannel {
       switch (action) {
         case "history-delete":
           snapshot = this.computerHistory.deleteHistory(String(body.history_id ?? ""));
+          break;
+        case "history-pin":
+          snapshot = this.computerHistory.pinSegment(
+            String(body.history_id ?? ""),
+            body.pinned !== false,
+          );
           break;
         case "demo-fixture":
           snapshot = this.computerHistory.installDemoFixture();
