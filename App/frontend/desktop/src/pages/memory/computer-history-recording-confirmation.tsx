@@ -29,7 +29,7 @@ export function ComputerHistoryRecordingConfirmation(props: {
         open
         title={t("computerHistory.enableTitle")}
         width={440}
-        cancelLabel={t("common.cancel")}
+        cancelLabel={t("dialog.cancel")}
         closeLabel={t("common.close")}
         confirmLabel={t("computerHistory.enableConfirm")}
         message={(

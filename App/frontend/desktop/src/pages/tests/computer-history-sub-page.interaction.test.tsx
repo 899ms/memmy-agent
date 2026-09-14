@@ -497,7 +497,7 @@ describe("ComputerHistorySubPage", () => {
     act(() => {
       if (dismiss === "cancel") {
         [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-          .find((button) => button.textContent === "返回")?.click();
+          .find((button) => button.textContent === "取消")?.click();
       } else {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       }
@@ -576,7 +576,7 @@ describe("ComputerHistorySubPage", () => {
 
     act(() => {
       [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-        .find((button) => button.textContent === "返回")?.click();
+        .find((button) => button.textContent === "取消")?.click();
     });
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
