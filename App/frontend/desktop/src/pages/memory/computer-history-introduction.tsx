@@ -1,4 +1,4 @@
-import { History, MessageCircle, X } from "lucide-react";
+import { History, MessageCircle, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -135,23 +135,26 @@ export function ComputerHistoryIntroduction(props: {
           <div className="chi-controls">
             <div className="chi-control">
               <span className="chi-control__icon chi-control__icon--history"><History size={18} /></span>
-              <span><strong>{t("historyIntro.record")}</strong>{state === "paused" ? <small>{t("historyIntro.recordPaused")}</small> : null}</span>
+              <span><strong>{t("historyIntro.record")}</strong><small>{t(state === "paused" ? "historyIntro.recordPaused" : "historyIntro.recordDetail")}</small></span>
               <button className="chi-switch" role="switch" type="button" aria-checked={recording} aria-label={t("historyIntro.record")} disabled={!loaded || busy}
                 onClick={() => setRecording((value) => !value)}><span /></button>
             </div>
           </div>
-          <details className="chi-scope"><summary>{t("historyIntro.captureScope")}</summary><p>{t("historyIntro.privacyRecording")}</p><p>{t("historyIntro.privacy")}</p></details>
           {error ? <p className="chi-error" role="alert">{error}{!loaded ? <button type="button" onClick={() => setReload((value) => value + 1)}>{t("historyIntro.retryLoad")}</button> : null}</p> : null}
           <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
           <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
+          <div className="chi-icon-flow" aria-hidden>
+            <Monitor size={43} strokeWidth={1.5} />
+            <i />
+            <History className="chi-icon-flow__main" size={49} strokeWidth={1.5} />
+            <i />
+            <MessageCircle size={41} strokeWidth={1.5} />
+          </div>
           <div className="chi-questions" role="group" aria-label={t("historyIntro.diagramLabel")}>
             {(["historyIntro.examplePublish", "historyIntro.exampleTodos", "historyIntro.exampleDocument"] as const).map((key) => (
-              <div className="chi-question" key={key}>
-                <MessageCircle size={21} strokeWidth={1.6} aria-hidden />
-                <span>{t(key)}</span>
-              </div>
+              <p className="chi-question" key={key}>{t(key)}</p>
             ))}
           </div>
         </div>

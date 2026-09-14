@@ -58,7 +58,7 @@ describe("passive Computer History introduction", () => {
     expect(switches[0].getAttribute("aria-checked")).toBe("true");
     expect(document.body.textContent).not.toContain("主动提醒");
     expect(document.body.textContent).not.toContain("提醒事项");
-    await act(async () => button("记录电脑活动").click());
+    await act(async () => button("开启计算机使用记录").click());
     expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
     await act(async () => button("稍后再看").click());
     expect(onClose).toHaveBeenCalledOnce();
@@ -68,7 +68,7 @@ describe("passive Computer History introduction", () => {
   it("uses the upstream start response without requiring a prototype recorderReady field", async () => {
     const state = client();
     const { onApplied } = await render(state.value);
-    await act(async () => button("记录电脑活动").click());
+    await act(async () => button("开启计算机使用记录").click());
     await act(async () => button("开始体验").click());
     expect(state.api.startComputerHistoryObservation).toHaveBeenCalledOnce();
     expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
@@ -97,7 +97,7 @@ describe("passive Computer History introduction", () => {
       throw new Error("请先授予辅助功能权限");
     });
     const { onApplied } = await render(state.value);
-    await act(async () => button("记录电脑活动").click());
+    await act(async () => button("开启计算机使用记录").click());
     await act(async () => button("开始体验").click());
     expect(onApplied).not.toHaveBeenCalled();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("辅助功能权限");
