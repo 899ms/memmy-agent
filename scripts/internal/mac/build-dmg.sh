@@ -626,6 +626,7 @@ verify_mac_agent_native_artifacts() {
   local node_pty_dir="$RUNTIME_DIR/memmy-agent/node_modules/openclaw/node_modules/@lydell/node-pty-darwin-$target_cpu/prebuilds/darwin-$target_cpu"
 
   require_packaged_runtime_file "$RUNTIME_DIR/memmy-agent/node_modules/@memmy/local-api-contracts/dist/index.js"
+  require_packaged_runtime_file "$RUNTIME_DIR/memmy-agent/node_modules/open-computer-use/dist/Open Computer Use.app/Contents/MacOS/OpenComputerUse"
   if [ -L "$RUNTIME_DIR/memmy-agent/node_modules/@memmy/local-api-contracts" ]; then
     echo "Packaged local API contracts must not be a symbolic link." >&2
     exit 1
@@ -669,6 +670,7 @@ verify_packaged_mac_unpacked_artifacts() {
   require_packaged_runtime_glob "$packaged_memory_runtime/node_modules/@img/sharp-libvips-darwin-$target_cpu/lib/libvips*.dylib"
   verify_packaged_memory_runtime_manifest "$packaged_memory_runtime" "$target_cpu"
   require_packaged_runtime_file "$unpacked_runtime/memmy-agent/node_modules/@memmy/migrations/dist/index.js"
+  require_packaged_runtime_file "$unpacked_runtime/memmy-agent/node_modules/open-computer-use/dist/Open Computer Use.app/Contents/MacOS/OpenComputerUse"
   require_packaged_runtime_file "$packaged_embedding_model/config.json"
   require_packaged_runtime_file "$packaged_embedding_model/tokenizer.json"
   require_packaged_runtime_file "$packaged_embedding_model/onnx/model_quantized.onnx"
