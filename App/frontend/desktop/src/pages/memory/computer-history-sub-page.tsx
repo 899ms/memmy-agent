@@ -23,6 +23,14 @@ interface HistoryDay {
 
 const DAY_MS = 86_400_000;
 
+// These macOS system helpers use the generic app icon and add no useful
+// application identity to the timeline. Keep their recorded history intact.
+const HIDDEN_SYSTEM_APPLICATIONS = new Set([
+  "com.apple.loginwindow",
+  "com.apple.UserNotificationCenter",
+  "com.apple.accessibility.universalAccessAuthWarn",
+]);
+
 function startOfDay(value: Date): number {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
 }
@@ -366,6 +374,9 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
               {collapsed ? null : day.entries.map((entry, index) => {
                 const next = day.entries[index + 1];
                 const continuous = next ? isContinuous(entry, next) : true;
+                const visibleApplications = (entry.applications ?? []).filter(
+                  (bundleId) => !HIDDEN_SYSTEM_APPLICATIONS.has(bundleId),
+                );
                 return (
                   <article key={entry.id} className="ch-entry">
                     <div className="ch-entry__when">{whenLabel(entry, t)}</div>
@@ -418,9 +429,9 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                       {entry.description ? (
                         <p className="ch-entry__summary"><Prose text={entry.description} /></p>
                       ) : null}
-                      {entry.applications?.length ? (
+                      {visibleApplications.length ? (
                         <ul className="ch-entry__apps">
-                          {entry.applications.map((bundleId) => (
+                          {visibleApplications.map((bundleId) => (
                             <li key={bundleId}>
                               <AppIcon bundleId={bundleId} client={props.client} />
                             </li>
