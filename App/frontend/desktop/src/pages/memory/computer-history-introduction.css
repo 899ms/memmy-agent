@@ -23,7 +23,11 @@
 .chi-dialog button:focus-visible { outline: 2px solid var(--color-action-sky-hover); outline-offset: 4px; }
 .chi-error { display: block; margin: 0 0 14px; padding: 9px 10px; border-radius: 8px; background: var(--color-status-error-soft); color: color-mix(in srgb, var(--color-status-error) 55%, var(--color-text-ink)); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .chi-error button { padding: 0; margin: 0 0 0 7px; font: inherit; color: inherit; text-decoration: underline; background: none; border: 0; cursor: pointer; }
-.chi-visual { position: relative; isolation: isolate; overflow: hidden; min-height: 552px; display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 56px 32px; background: var(--color-canvas-oat); }
+.chi-visual { position: relative; isolation: isolate; overflow: hidden; min-height: 552px; display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 56px 32px; background: radial-gradient(ellipse at 92% 8%, color-mix(in srgb, var(--color-accent-peach) 55%, var(--color-background-paper)) 0, transparent 58%), radial-gradient(ellipse at 8% 96%, color-mix(in srgb, var(--color-action-sky) 25%, var(--color-accent-mint)) 0, transparent 60%), linear-gradient(140deg, var(--color-canvas-oat), color-mix(in srgb, var(--color-accent-mint) 66%, var(--color-background-paper)) 55%, color-mix(in srgb, var(--color-action-sky) 16%, var(--color-canvas-oat))); }
+.chi-visual::after { content: ""; position: absolute; z-index: -1; inset: 0; opacity: .14; background-image: radial-gradient(color-mix(in srgb, var(--color-text-ink) 18%, transparent) .65px, transparent .65px); background-size: 4px 4px; pointer-events: none; }
+.chi-orb { position: absolute; z-index: -1; width: 300px; height: 300px; border-radius: 50%; filter: blur(36px); opacity: .5; }
+.chi-orb--one { top: -130px; right: -80px; background: var(--color-accent-peach); }
+.chi-orb--two { bottom: -140px; left: -90px; background: var(--color-action-sky); }
 .ch__info--button { padding: 0; background: none; cursor: pointer; }
 .ch__info--button:hover { color: var(--ch-title); border-color: var(--ch-title); }
 .chi-examples { position: relative; width: 100%; max-width: 420px; flex-shrink: 0; }

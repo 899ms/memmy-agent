@@ -144,6 +144,7 @@ export function ComputerHistoryIntroduction(props: {
           <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
+          <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
           <HistoryExamples />
         </div>
       </section>
