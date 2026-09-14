@@ -74,6 +74,33 @@ describe("passive Computer History introduction", () => {
     expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
   });
 
+  it("browses all three history examples without applying settings or losing navigation focus", async () => {
+    const state = client();
+    const { onApplied, onClose } = await render(state.value);
+    const next = button("下一个示例");
+    const content = () => document.querySelector('[aria-live="polite"]')?.textContent;
+    expect(content()).toContain("终端与浏览器中的操作");
+    expect(content()).not.toContain("今天的待办");
+    next.focus();
+    await act(async () => next.click());
+    expect(content()).toContain("你在电脑上看过的聊天");
+    expect(document.activeElement).toBe(next);
+    await act(async () => next.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+    expect(content()).toContain("来自上周四访问过的原文链接");
+    await act(async () => next.click());
+    expect(content()).toContain("项目发布流程");
+    await act(async () => button("上一个示例").click());
+    expect(content()).toContain("产品规划");
+    await act(async () => button("找出聊过的待办").click());
+    expect(content()).toContain("发送更新后的排期");
+    expect(button("找出聊过的待办").getAttribute("aria-current")).toBe("true");
+    expect(state.api.getComputerHistory).toHaveBeenCalledOnce();
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("does not stop a paused session when no setting was changed", async () => {
     const state = client(snapshot("paused"));
     const { onApplied } = await render(state.value);

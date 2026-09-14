@@ -1,4 +1,4 @@
-import { History, MessageCircle, Monitor, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, History, ListTodo, WandSparkles, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -145,21 +145,60 @@ export function ComputerHistoryIntroduction(props: {
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
           <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
-          <div className="chi-icon-flow" aria-hidden>
-            <Monitor size={43} strokeWidth={1.5} />
-            <i />
-            <History className="chi-icon-flow__main" size={49} strokeWidth={1.5} />
-            <i />
-            <MessageCircle size={41} strokeWidth={1.5} />
-          </div>
-          <div className="chi-questions" role="group" aria-label={t("historyIntro.diagramLabel")}>
-            {(["historyIntro.examplePublish", "historyIntro.exampleTodos", "historyIntro.exampleDocument"] as const).map((key) => (
-              <p className="chi-question" key={key}>{t(key)}</p>
-            ))}
-          </div>
+          <HistoryExamples />
         </div>
       </section>
     </div>, document.body,
+  );
+}
+
+const historyExamples = [
+  { title: "historyIntro.publishTitle", question: "historyIntro.examplePublish", source: "historyIntro.publishSource", answer: "historyIntro.publishAnswer", result: "historyIntro.publishResult", detail: "historyIntro.publishDetail", icon: WandSparkles },
+  { title: "historyIntro.todosTitle", question: "historyIntro.exampleTodos", source: "historyIntro.todosSource", answer: "historyIntro.todosAnswer", result: "historyIntro.todosResult", detail: "historyIntro.todosDetail", icon: ListTodo },
+  { title: "historyIntro.documentTitle", question: "historyIntro.exampleDocument", source: "historyIntro.documentSource", answer: "historyIntro.documentAnswer", result: "historyIntro.documentResult", detail: "historyIntro.documentDetail", icon: FileText },
+] as const;
+
+/** Illustrative content only. Browsing examples never queries activity or applies settings. */
+function HistoryExamples() {
+  const { t } = useTranslation();
+  const [index, setIndex] = useState(0);
+  const example = historyExamples[index] ?? historyExamples[0];
+  const ResultIcon = example.icon;
+  const move = (direction: number) => setIndex((current) => (current + direction + historyExamples.length) % historyExamples.length);
+
+  return (
+    <div className="chi-examples" role="group" aria-label={t("historyIntro.diagramLabel")} onKeyDown={(event) => {
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        event.stopPropagation();
+        move(event.key === "ArrowLeft" ? -1 : 1);
+      }
+    }}>
+      <div className="chi-demo" aria-live="polite" aria-atomic="true">
+        <div className="chi-demo__header"><strong>{t(example.title)}</strong><span>{t("historyIntro.demo")}</span></div>
+        <div className="chi-demo__conversation" key={index}>
+          <p className="chi-demo__question">{t(example.question)}</p>
+          <div className="chi-demo__lookup">
+            <div><History size={14} aria-hidden="true" /><span>{t("historyIntro.lookup")}</span></div>
+            <small>{t(example.source)}</small>
+          </div>
+          <p className="chi-demo__answer">{t(example.answer)}</p>
+          <div className="chi-demo__result">
+            <ResultIcon size={20} strokeWidth={1.6} aria-hidden="true" />
+            <div><strong>{t(example.result)}</strong><p>{t(example.detail)}</p></div>
+          </div>
+        </div>
+      </div>
+      <div className="chi-pagination">
+        <button className="chi-pagination__arrow" type="button" aria-label={t("historyIntro.previousExample")} onClick={() => move(-1)}><ChevronLeft size={17} aria-hidden="true" /></button>
+        <div className="chi-pagination__dots">
+          {historyExamples.map((item, position) => (
+            <button className="chi-pagination__dot" type="button" key={item.title} aria-label={t(item.title)} aria-current={index === position ? "true" : undefined} onClick={() => setIndex(position)}><span /></button>
+          ))}
+        </div>
+        <button className="chi-pagination__arrow" type="button" aria-label={t("historyIntro.nextExample")} onClick={() => move(1)}><ChevronRight size={17} aria-hidden="true" /></button>
+      </div>
+    </div>
   );
 }
 
