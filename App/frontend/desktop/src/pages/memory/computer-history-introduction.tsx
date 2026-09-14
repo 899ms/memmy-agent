@@ -1,4 +1,4 @@
-import { FileText, Globe, History, MessageCircle, Monitor, X } from "lucide-react";
+import { History, MessageCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -130,7 +130,7 @@ export function ComputerHistoryIntroduction(props: {
       <section ref={dialog} className="chi-dialog" role="dialog" aria-modal="true" aria-labelledby="chi-title" aria-describedby="chi-description" tabIndex={-1} onKeyDown={trapFocus}>
         <button className="chi-close" type="button" aria-label={t("historyIntro.close")} disabled={busy} onClick={close}><X size={21} /></button>
         <div className="chi-copy">
-          <h2 id="chi-title">{t("historyIntro.titleFirst")}<br />{t("historyIntro.titleSecond")}</h2>
+          <h2 id="chi-title">{t("historyIntro.title")}</h2>
           <p id="chi-description" className="chi-description">{t("historyIntro.description")}</p>
           <div className="chi-controls">
             <div className="chi-control">
@@ -140,21 +140,19 @@ export function ComputerHistoryIntroduction(props: {
                 onClick={() => setRecording((value) => !value)}><span /></button>
             </div>
           </div>
-          <details className="chi-scope"><summary>{t("historyIntro.captureScope")}</summary><p>{t("historyIntro.privacy")}</p><p>{t("computerHistory.info")}</p></details>
+          <details className="chi-scope"><summary>{t("historyIntro.captureScope")}</summary><p>{t("historyIntro.privacyRecording")}</p><p>{t("historyIntro.privacy")}</p></details>
           {error ? <p className="chi-error" role="alert">{error}{!loaded ? <button type="button" onClick={() => setReload((value) => value + 1)}>{t("historyIntro.retryLoad")}</button> : null}</p> : null}
           <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
           <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
-          <div className="chi-question">
-            <MessageCircle size={24} strokeWidth={1.6} aria-hidden />
-            <span>{t("historyIntro.exampleQuestion")}</span>
-          </div>
-          <div className="chi-history-illustration" aria-hidden>
-            <div className="chi-history-heading"><History size={19} /><span>{t("historyIntro.exampleRecord")}</span></div>
-            <div className="chi-history-line"><span><Monitor size={19} /></span><i /><b /></div>
-            <div className="chi-history-line"><span><Globe size={19} /></span><i /><b /></div>
-            <div className="chi-history-line"><span><FileText size={19} /></span><i /><b /></div>
+          <div className="chi-questions" role="group" aria-label={t("historyIntro.diagramLabel")}>
+            {(["historyIntro.examplePublish", "historyIntro.exampleTodos", "historyIntro.exampleDocument"] as const).map((key) => (
+              <div className="chi-question" key={key}>
+                <MessageCircle size={21} strokeWidth={1.6} aria-hidden />
+                <span>{t(key)}</span>
+              </div>
+            ))}
           </div>
         </div>
       </section>
