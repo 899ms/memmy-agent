@@ -20,6 +20,7 @@ import { ToolRegistry } from "../../../src/core/agent-runtime/tools/registry.js"
 import { MessageBus } from "../../../src/core/runtime-messages/index.js";
 import { Config } from "../../../src/config/schema.js";
 import { saveConfig, setConfigPath } from "../../../src/config/loader.js";
+import { resolveOpenComputerUseCommand } from "../../../src/tools/computer-use/open-computer-use-binary.js";
 
 const roots: string[] = [];
 
@@ -130,6 +131,28 @@ afterEach(() => {
 });
 
 describe("MCP connection helpers", () => {
+  it("registers bundled OCU tools without looking up the launcher on PATH", async () => {
+    const binary = resolveOpenComputerUseCommand("open-computer-use");
+    expect(path.isAbsolute(binary)).toBe(true);
+    const onStdio = vi.fn();
+    setMcpRuntimeForTest(runtimeFor({ [binary]: fakeSession(["list_apps"]) }, { onStdio }) as any);
+    const registry = new ToolRegistry();
+    const stacks = await connectMcpServers({
+      open_computer_use: { command: "open-computer-use", args: ["mcp"] },
+    }, registry);
+    expect(onStdio).toHaveBeenCalledWith(binary);
+    expect(registry.has("mcp_open_computer_use_list_apps")).toBe(true);
+    await stacks.open_computer_use.aclose();
+  });
+
+  it("reports spawn failures instead of silently dropping the server", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    setMcpRuntimeForTest(runtimeFor({}) as any);
+    await expect(connectMcpServers({ missing: { command: "missing-command" } }, new ToolRegistry())).resolves.toEqual({});
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("cannot connect missing-command"));
+    error.mockRestore();
+  });
+
   it("sanitizes tool names and safely noops when MCP runtime is unavailable", async () => {
     expect(sanitizeName("mcp/fs.read-file")).toBe("mcp_fs_read-file");
     await expect(connectMcpServers({}, new ToolRegistry())).resolves.toEqual({});

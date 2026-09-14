@@ -9,6 +9,8 @@ directories:
 files:
   - dist/**/*
   - package.json
+  - "!**/node_modules/open-computer-use/dist/linux/**"
+  - "!**/node_modules/open-computer-use/dist/windows/**"
   - "!**/node_modules/*/{test,tests,__tests__,doc,docs,example,examples,coverage,.github}"
   - "!**/node_modules/*/{test,tests,__tests__,doc,docs,example,examples,coverage,.github}/**/*"
   - "!**/node_modules/@*/*/{test,tests,__tests__,doc,docs,example,examples,coverage,.github}"
@@ -20,6 +22,7 @@ files:
 
 asar: true
 asarUnpack:
+  - "**/node_modules/open-computer-use/dist/**"
   - "**/*.node"
   - "**/onnxruntime-node/bin/napi-v3/darwin/**/*.dylib"
   - "**/@img/sharp-libvips-darwin-*/lib/libvips*.dylib"
