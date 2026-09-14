@@ -277,13 +277,13 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
             <ScrollText size={18} className="text-text-ink/60" />
             {t("memory.nav.computerHistory")}
           </h3>
+          <p id="computer-history-record-description" className="memory-panel__subtitle">{t("computerHistory.recordDescription")}</p>
         </div>
       </header>
 
       <div className="ch__recording-setting flex items-center justify-between bg-background-paper rounded-card-lg border-content-panel">
         <div className="flex-1 pr-4">
           <div id="computer-history-record-label" className="text-sm text-text-ink/70">{t("computerHistory.record")}</div>
-          <div id="computer-history-record-description" className="mt-1 text-xs text-text-ink/50 leading-relaxed">{t("computerHistory.recordDescription")}</div>
         </div>
         <div className="ch__head-actions">
           {recording || paused ? (
