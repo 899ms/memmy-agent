@@ -63,9 +63,29 @@ describe("ComputerHistorySubPage", () => {
     const client = await renderWith(snapshot());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
-    expect(container.querySelector('.ch__info')?.getAttribute("title")).toContain("只在开启时记录");
-    expect(container.querySelector('button.ch__info')).toBeNull();
+    expect(container.querySelector('button.ch__info')?.getAttribute("aria-label")).toBe("了解更多");
     expect(client.getComputerHistory).toHaveBeenCalledOnce();
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+  });
+
+  it("explains recording on hover and click without opening the introduction or starting recording", async () => {
+    const client = await renderWith(snapshot());
+    const info = container.querySelector<HTMLButtonElement>('button.ch__info')!;
+    const tooltip = () => document.querySelector('[role="tooltip"]');
+    act(() => { info.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })); });
+    expect(tooltip()?.textContent).toBe("Memmy 会记录你电脑活动，并整理为文本摘要。你可以通过删除单条记录或清除历史记录来控制 Memmy 可以引用的内容。");
+    expect(tooltip()?.getAttribute("aria-hidden")).toBe("false");
+    act(() => { info.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })); });
+    expect(tooltip()?.getAttribute("aria-hidden")).toBe("true");
+    act(() => { info.click(); });
+    act(() => { info.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })); });
+    expect(tooltip()?.getAttribute("aria-hidden")).toBe("false");
+    act(() => { info.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(tooltip()?.getAttribute("aria-hidden")).toBe("true");
+    act(() => { info.click(); });
+    act(() => { document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); });
+    expect(tooltip()?.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
   });
 
