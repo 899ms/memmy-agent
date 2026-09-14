@@ -206,7 +206,7 @@ export function KnowledgePage({
           {t("正在读取知识库配置…", "Loading knowledge settings…")}
         </p>
       ) : (
-        <fieldset disabled={busy}>
+        <fieldset aria-busy={busy}>
           {!settings.serviceAvailable && (
             <p className="mk-notice" role="status">
               {t(
@@ -241,7 +241,7 @@ export function KnowledgePage({
               )}
               {visibleBases.map((base) => (
                 <div
-                  className={`mk-base mk-table-row ${base.id === activeId ? "mk-active" : ""}`}
+                  className="mk-base mk-table-row"
                   key={base.id}
                 >
                   <input
@@ -464,12 +464,119 @@ export function KnowledgePage({
           {createOpen && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true"><button className="mk-modal-close" onClick={() => setCreateOpen(false)}>×</button><h2>{t("新建知识库", "New knowledge base")}</h2><p>{t("创建一个新的个人知识库。", "Create a personal knowledge base.")}</p><form onSubmit={(event) => { event.preventDefault(); void run(async () => { acceptSettings(await api<KnowledgeSettings>("/bases", "POST", { name })); setName(""); setCreateOpen(false); }); }}><label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required autoFocus /></label><div className="mk-modal-actions"><button type="button" onClick={() => setCreateOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit" disabled={!settings.serviceAvailable}>{t("创建", "Create")}</button></div></form></div></div>}
           {deleteOpen && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-delete-title"><button className="mk-modal-close" onClick={() => setDeleteOpen(false)}>×</button><h2 id="mk-delete-title">{t("删除知识库", "Delete knowledge base")}</h2><p>{t("彻底删除此知识库及全部文件？这会同时删除 MemOS 中的数据，删除后无法恢复。", "Permanently delete this knowledge base and all its files? This also deletes the data in MemOS and cannot be undone.")}</p><div className="mk-modal-actions"><button type="button" onClick={() => setDeleteOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const id = active.id; void run(async () => { acceptSettings(await api<KnowledgeSettings>(`/bases/${encodeURIComponent(id)}`, "DELETE")); setActiveId(""); setDetailOpen(false); setDeleteOpen(false); setPage(1); }); }}>{t("确认删除", "Delete")}</button></div></div></div>}
           {fileDeleteTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-file-delete-title"><button className="mk-modal-close" onClick={() => setFileDeleteTarget(null)}>×</button><h2 id="mk-file-delete-title">{t("删除文件", "Delete file")}</h2><p>{t(`从云端删除“${fileDeleteTarget.name}”？此操作也会影响该知识库的其他使用方。`, `Delete “${fileDeleteTarget.name}” from the cloud? This also affects other users of this knowledge base.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setFileDeleteTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const target = fileDeleteTarget; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/files/${encodeURIComponent(target.id)}`, "DELETE", { page }); setFileDeleteTarget(null); setRefresh((value) => value + 1); }); }}>{t("确认删除", "Delete")}</button></div></div></div>}
-          {shareOpen && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true"><button className="mk-modal-close" onClick={() => setShareOpen(false)}>×</button><h2>{t("共享知识库", "Share knowledge base")}</h2><p>{t("选择知识库并输入对方的 Memmy 用户 ID。", "Choose a knowledge base and enter the other Memmy user's ID.")}</p><form onSubmit={(event) => { event.preventDefault(); const target = active ?? ownedBases[0]; if (!target) return; void run(async () => { await api(`/bases/${encodeURIComponent(target.id)}/members`, "POST", { userId: shareUserId.trim() }); setShareUserId(""); setShareOpen(false); setNotice(t("共享成功。", "Shared successfully.")); }); }}><label>{t("知识库", "Knowledge base")}<select value={activeId} onChange={(event) => setActiveId(event.target.value)}>{ownedBases.map((base) => <option value={base.id} key={base.id}>{base.name}</option>)}</select></label><label>{t("Memmy 用户 ID", "Memmy user ID")}<input value={shareUserId} onChange={(event) => setShareUserId(event.target.value)} placeholder={t("输入用户 ID", "Enter user ID")} required /></label><div className="mk-modal-actions"><button type="button" onClick={() => setShareOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit">{t("确认共享", "Share")}</button></div></form></div></div>}
+          {shareOpen && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true"><button className="mk-modal-close" onClick={() => setShareOpen(false)}>×</button><h2>{t("共享知识库", "Share knowledge base")}</h2><p>{t("选择知识库并输入对方的 Memmy 用户 ID。", "Choose a knowledge base and enter the other Memmy user's ID.")}</p><form onSubmit={(event) => { event.preventDefault(); const target = active ?? ownedBases[0]; if (!target) return; void run(async () => { await api(`/bases/${encodeURIComponent(target.id)}/members`, "POST", { userId: shareUserId.trim() }); setShareUserId(""); setShareOpen(false); setNotice(t("共享成功。", "Shared successfully.")); }); }}><div className="mk-select-field"><span>{t("知识库", "Knowledge base")}</span><BaseSelect options={ownedBases.map((base) => ({ id: base.id, name: base.name }))} value={activeId} onChange={setActiveId} /></div><label>{t("Memmy 用户 ID", "Memmy user ID")}<input value={shareUserId} onChange={(event) => setShareUserId(event.target.value)} placeholder={t("输入用户 ID", "Enter user ID")} required /></label><div className="mk-modal-actions"><button type="button" onClick={() => setShareOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit">{t("确认共享", "Share")}</button></div></form></div></div>}
         </fieldset>
       )}
-      {busy && <p role="status">{t("正在处理…", "Working…")}</p>}
       </div>
     </section>
+  );
+}
+interface BaseSelectOption {
+  id: string;
+  name: string;
+}
+function BaseSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: BaseSelectOption[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const root = useRef<HTMLDivElement>(null);
+  const selected = options.find((option) => option.id === value) ?? options[0];
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+  useEffect(() => {
+    if (open)
+      setHighlight(
+        Math.max(
+          0,
+          options.findIndex((option) => option.id === value),
+        ),
+      );
+  }, [open, options, value]);
+  return (
+    <div
+      className="mk-base-select"
+      ref={root}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          if (!open) {
+            setOpen(true);
+            return;
+          }
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setHighlight((current) =>
+            Math.min(options.length - 1, Math.max(0, current + step)),
+          );
+        } else if (open && event.key === "Enter") {
+          event.preventDefault();
+          const option = options[highlight];
+          if (option) {
+            onChange(option.id);
+            setOpen(false);
+          }
+        }
+      }}
+    >
+      <button
+        type="button"
+        className={
+          open ? "mk-base-select-trigger mk-open" : "mk-base-select-trigger"
+        }
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selected?.name ?? ""}</span>
+        <span className="mk-base-select-arrow" aria-hidden="true">
+          ⌄
+        </span>
+      </button>
+      {open && (
+        <ul className="mk-base-select-list" role="listbox">
+          {options.map((option, index) => {
+            const isSelected = option.id === selected?.id;
+            return (
+              <li
+                key={option.id}
+                role="option"
+                aria-selected={isSelected}
+                className={`mk-base-select-option${isSelected ? " mk-selected" : ""}${index === highlight ? " mk-highlight" : ""}`}
+                onMouseEnter={() => setHighlight(index)}
+                onClick={() => {
+                  onChange(option.id);
+                  setOpen(false);
+                }}
+              >
+                <span>{option.name}</span>
+                <span className="mk-base-select-check" aria-hidden="true">
+                  ✓
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 const styles = `
@@ -480,16 +587,17 @@ const styles = `
 .memmy-knowledge summary{cursor:pointer;font-weight:500}.memmy-knowledge summary span{float:right;opacity:.55;font-size:12px}.memmy-knowledge form{display:grid;gap:12px;margin-top:18px}.memmy-knowledge label{display:grid;gap:7px;font-size:13px}
 .memmy-knowledge input:not([type=checkbox]),.memmy-knowledge select{border:1px solid #8884;border-radius:7px;padding:9px 10px;background:transparent;color:inherit;min-width:0;width:100%;box-sizing:border-box}.memmy-knowledge input[type=checkbox]{accent-color:#3c9567;width:16px;height:16px;flex-shrink:0}
 .memmy-knowledge button{border:1px solid #8883;border-radius:7px;padding:7px 11px;background:transparent;color:inherit;cursor:pointer;white-space:nowrap}.memmy-knowledge button:hover{background:#8881}.memmy-knowledge button:disabled,.memmy-knowledge fieldset:disabled{opacity:.55;cursor:default}.memmy-knowledge :focus-visible{outline:2px solid #3c9567;outline-offset:2px}.memmy-knowledge .mk-toggle{display:flex;align-items:center;white-space:nowrap}
-.mk-columns{display:grid;grid-template-columns:270px minmax(0,1fr);gap:18px}.mk-base{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px}.mk-active{background:#3a956413}.memmy-knowledge .mk-base-name{border:0;text-align:left;white-space:normal;overflow-wrap:anywhere;flex:1}.mk-add{border-top:1px solid #8883;margin-top:20px;padding-top:16px}.mk-empty{padding:30px 0;text-align:center;opacity:.6;line-height:1.7}
+.mk-columns{display:grid;grid-template-columns:270px minmax(0,1fr);gap:18px}.mk-base{display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px}.memmy-knowledge .mk-base-name{border:0;text-align:left;white-space:normal;overflow-wrap:anywhere;flex:1}.mk-add{border-top:1px solid #8883;margin-top:20px;padding-top:16px}.mk-empty{padding:30px 0;text-align:center;opacity:.6;line-height:1.7}
 .mk-file-header small{opacity:.5;overflow-wrap:anywhere}.mk-upload{margin:20px 0;padding:16px;border:1px dashed #8884;border-radius:9px}.mk-files{list-style:none;padding:0;margin:0}.mk-files li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-top:1px solid #8882}.mk-files strong{font-weight:500;overflow-wrap:anywhere}.mk-files small{display:block;opacity:.6;margin-top:6px}.mk-pagination{justify-content:flex-end;margin-top:18px;font-size:12px}.mk-pagination>span:first-child{margin-right:auto}.mk-error{padding:12px 16px;margin-top:18px;border:1px solid #bf555566;border-radius:8px;color:#bb5555;display:flex;align-items:center;justify-content:space-between;gap:12px}.mk-notice{padding:12px;background:#3a956413;border-radius:8px}.mk-help{font-size:12px}.mk-actions{justify-content:flex-start}
 
 .memmy-knowledge .mk-primary{background:var(--color-action-sky,#5cbfae);color:white;border:0;border-radius:7px;padding:8px 12px;cursor:pointer}.memmy-knowledge .mk-primary:hover{background:var(--color-action-sky-hover,#3aa893)}.memmy-knowledge .mk-danger{background:#d9534f;color:white;border:0;border-radius:7px;padding:8px 12px;cursor:pointer}.memmy-knowledge .mk-danger:hover{background:#c4423e}.memmy-knowledge .mk-add>summary{width:fit-content}
 .mk-upload-picker{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}.mk-upload-picker span{font-size:13px;line-height:1.5}.mk-upload-failures{font-size:13px;color:#bb5555;overflow-wrap:anywhere;padding-left:20px}.mk-upload>button{flex-shrink:0}
 .mk-page-header{padding-bottom:4px}.mk-header-actions{display:flex;align-items:center;gap:10px}.mk-quota-note{padding:8px 12px;border-left:2px solid #aaa8;background:#f2f1fb;border-radius:0 10px 10px 0;color:#64708c;white-space:nowrap}.mk-add-top{border:0;margin:0;padding:0}.mk-add-top form{position:absolute;right:28px;z-index:2;background:var(--background-primary,#fff);border:1px solid #8883;border-radius:10px;padding:14px;width:230px}.mk-view-tabs{display:flex;gap:4px;margin:26px 0 18px;border-bottom:1px solid #8882}.mk-view-tabs button{border:0;border-radius:8px 8px 0 0;padding:10px 14px;background:transparent;color:inherit;opacity:.62}.mk-view-tabs button span{font-size:11px;margin-left:7px;opacity:.55}.mk-view-tabs .mk-view-active{opacity:1;background:#8882;font-weight:600}.mk-overview-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 20px}.mk-overview-card{border-radius:12px;padding:17px 18px;position:relative;overflow:hidden}.mk-overview-card span,.mk-overview-card small{display:block;font-size:12px;opacity:.7}.mk-overview-card strong{display:block;font-size:27px;margin:9px 0 3px}.mk-overview-mine{background:#edf4ff}.mk-overview-shared{background:#f2effc}.mk-base-panel{padding:18px}.mk-section-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.mk-section-heading h2{margin:0}.mk-section-heading span{font-size:11px;opacity:.5}.mk-base-panel .mk-add{margin-top:16px}
 .mk-secondary{border:1px solid #8884!important;background:transparent!important}.mk-detail-closed{display:none}.mk-close{font-size:23px!important;border:0!important;padding:0!important;line-height:1;opacity:.65}.mk-detail-modal{position:fixed;z-index:20;top:9vh;right:6vw;width:min(720px,calc(100vw - 48px));max-height:82vh;overflow:auto;background:var(--background-primary,#fff);border-radius:16px;padding:24px;box-shadow:0 16px 60px #18212b35}.mk-detail-modal:before{content:"";position:fixed;inset:0;background:#18212b30;z-index:-1}.mk-detail-modal .mk-file-header{align-items:flex-start}.mk-detail-modal .mk-file-header>div:first-child{flex:1}
-.mk-view-tabs{margin-top:34px;gap:0;border:0}.mk-view-tabs button{padding:8px 14px;background:transparent;border-radius:7px}.mk-view-tabs .mk-view-active{background:#e7e7e7}.mk-overview-grid{display:none}.mk-columns{display:block}.mk-base-panel{border:0;padding:0;margin:0}.mk-section-heading{display:none}.mk-table-head,.mk-table-row{display:grid;grid-template-columns:minmax(280px,2fr) minmax(150px,1fr) 150px;align-items:center;column-gap:18px}.mk-table-head{padding:0 12px 10px;color:#999;font-size:12px;border-bottom:1px solid #eee}.mk-table-row{padding:13px 12px;border-bottom:1px solid #eee;border-radius:0}.mk-table-row:hover{background:transparent}.mk-table-row .mk-base-name:hover{text-decoration:underline;text-underline-offset:3px}.mk-table-row>span{font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mk-table-row .mk-base-name{font-size:13px;padding:0;text-decoration:none}.mk-table-row input{grid-column:1;position:absolute;opacity:0}.mk-table-row .mk-base-name{grid-column:1}.mk-detail-recall{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;border-bottom:1px solid #eee;padding:14px 0;margin:18px 0}.mk-detail-recall .mk-toggle{display:flex;gap:8px;align-items:center;font-size:12px}.mk-page-header h1{font-size:25px}.mk-page-header p{font-size:13px}
+.mk-view-tabs{margin-top:34px;gap:0;border:0}.mk-view-tabs button{padding:8px 14px;background:transparent;border-radius:7px}.mk-view-tabs .mk-view-active{background:#e7e7e7}.mk-overview-grid{display:none}.mk-columns{display:block}.mk-base-panel{border:0;padding:0;margin:0}.mk-section-heading{display:none}.mk-table-head,.mk-table-row{display:grid;grid-template-columns:minmax(280px,2fr) minmax(150px,1fr) 150px;align-items:center;column-gap:18px}.mk-table-head{padding:0 12px 10px;color:#999;font-size:12px;border-bottom:1px solid #eee}.mk-table-row{padding:11px 12px;border-bottom:1px solid #eee;border-radius:8px;transition:background .15s ease}.mk-table-row:hover{background:#f7faf9}.mk-table-row .mk-base-name:hover{text-decoration:underline;text-underline-offset:3px}.mk-table-row>span{font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mk-table-row .mk-base-name{font-size:13px;padding:0;background:transparent!important;text-decoration:none}.mk-table-row input{grid-column:1;position:absolute;opacity:0}.mk-table-row .mk-base-name{grid-column:1}.mk-detail-recall{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;border-bottom:1px solid #eee;padding:14px 0;margin:18px 0}.mk-detail-recall .mk-toggle{display:flex;gap:8px;align-items:center;font-size:12px}.mk-page-header h1{font-size:25px}.mk-page-header p{font-size:13px}
 .memmy-knowledge{display:block;max-width:none;padding:0;min-height:100%;position:relative}.mk-library-nav{width:190px;flex:0 0 190px;background:#f7f8fa;border-right:1px solid #8882;padding:25px 12px}.mk-library-nav-title{font-size:18px;font-weight:600;padding:0 12px 22px}.mk-library-nav button{display:block;width:100%;border:0;text-align:left;padding:9px 12px;border-radius:7px;background:transparent;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mk-library-nav button:hover{background:#e9ecef}.mk-library-nav .mk-library-nav-active{background:#e1e5e9;font-weight:600}.mk-library-group{font-size:11px;opacity:.55;padding:22px 12px 7px}.mk-library-content{min-width:0;padding:32px 42px}.mk-detail-modal{position:absolute!important;right:0;top:0;width:min(650px,70%);height:100%;max-height:none;border-radius:0;box-shadow:-10px 0 35px #18212b18}.mk-detail-modal:before{display:none}.mk-modal-backdrop{position:fixed;inset:0;background:rgba(20,27,35,.12);z-index:40;display:grid;place-items:center}.mk-action-modal{box-shadow:0 14px 45px #18212b24}
 .mk-modal-backdrop{position:fixed;inset:0;background:rgba(20,27,35,.16);z-index:40;display:grid;place-items:center}.mk-action-modal{position:relative;width:390px;background:var(--background-primary,#fff);border:1px solid #8883;border-radius:12px;padding:25px}.mk-action-modal h2{font-size:18px;margin:0 0 8px}.mk-action-modal p{font-size:12px;opacity:.65;margin-bottom:20px}.mk-modal-close{position:absolute;right:15px;top:13px;border:0!important;font-size:22px!important;padding:0!important;opacity:.6}.mk-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.mk-action-modal select{border:1px solid #8884;border-radius:7px;padding:9px;background:transparent;color:inherit}
-.mk-detail-modal .mk-file-header{position:relative;padding-top:48px}.mk-detail-modal .mk-close{position:absolute;left:0;top:12px;width:38px;height:38px;display:flex;align-items:center;justify-content:flex-start;z-index:5;cursor:pointer;pointer-events:auto}
+.mk-detail-modal .mk-file-header{position:relative;padding-top:58px;padding-bottom:28px;border-bottom:1px solid #eee}.mk-detail-modal .mk-close{position:absolute;left:0;top:12px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px!important;background:#f7f8f8!important;font-size:28px!important;line-height:1;z-index:5;cursor:pointer;pointer-events:auto}.mk-detail-modal .mk-close:hover{background:#e8f6f3!important;color:#2d8f81}.mk-detail-modal .mk-file-header h2{margin:0;font-size:22px;line-height:1.25}.mk-detail-modal .mk-detail-recall{margin-top:24px}
+.mk-select-field{display:grid;gap:7px;font-size:13px}.mk-base-select{position:relative}.mk-base-select-trigger{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;box-sizing:border-box;border:1px solid #d9deda!important;border-radius:9px!important;padding:9px 12px;background:#fff!important;color:inherit;font-size:14px;text-align:left;cursor:pointer;white-space:nowrap}.mk-base-select-trigger:hover{background:#f7faf9!important}.mk-base-select-trigger.mk-open,.mk-base-select-trigger:focus-visible{border-color:#46b6a5!important;box-shadow:0 0 0 3px #46b6a522}.mk-base-select-trigger>span:first-child{overflow:hidden;text-overflow:ellipsis}.mk-base-select-arrow{font-size:15px;opacity:.55;flex-shrink:0;transition:transform .15s ease}.mk-base-select-trigger.mk-open .mk-base-select-arrow{transform:rotate(180deg)}.mk-base-select-list{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:10;margin:0;padding:5px;list-style:none;background:var(--background-primary,#fff);border:1px solid #e3e8e5;border-radius:10px;box-shadow:0 10px 32px #18212b22;max-height:220px;overflow:auto}.mk-base-select-option{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:7px;font-size:13px;cursor:pointer}.mk-base-select-option:hover,.mk-base-select-option.mk-highlight{background:#f0f7f5}.mk-base-select-option.mk-selected{color:#2d8f81;font-weight:600}.mk-base-select-check{color:#46b6a5;font-size:13px;opacity:0;flex-shrink:0}.mk-base-select-option.mk-selected .mk-base-select-check{opacity:1}
 @media(max-width:850px){.mk-columns{grid-template-columns:1fr}.memmy-knowledge{padding:24px 16px}.mk-recall{align-items:flex-start}.mk-file-header{flex-wrap:wrap}}
 `;
