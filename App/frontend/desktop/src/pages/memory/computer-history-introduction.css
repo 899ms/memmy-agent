@@ -12,14 +12,11 @@
 .chi-control__icon--history { background: var(--color-accent-mint); color: color-mix(in srgb, var(--color-action-sky-hover) 65%, var(--color-text-ink)); }
 .chi-control > span:nth-child(2) { min-width: 0; flex: 1; }
 .chi-control strong { display: block; font-size: 14px; font-weight: 550; line-height: 1.45; }
-.chi-control small { display: block; margin-top: 3px; font-size: 10px; line-height: 1.5; color: var(--chi-muted); }
+.chi-control small { display: block; margin-top: 4px; font-size: 11px; line-height: 1.5; color: var(--chi-muted); }
 .chi-switch { padding: 2px; border: 0; border-radius: 20px; width: 31px; height: 19px; background: var(--color-border-stone); flex-shrink: 0; cursor: pointer; transition: background 140ms; }
 .chi-switch span { display: block; background: var(--color-background-paper); box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text-ink) 13%, transparent); border-radius: 50%; width: 15px; height: 15px; transition: transform 140ms; }
 .chi-switch[aria-checked="true"] { background: var(--color-action-sky); }
 .chi-switch[aria-checked="true"] span { transform: translateX(12px); }
-.chi-scope { margin: 14px 0 28px; color: var(--chi-muted); font-size: 11px; line-height: 1.7; }
-.chi-scope summary { cursor: pointer; }
-.chi-scope p { margin: 8px 0 0; }
 .chi-primary { margin-top: auto; width: 100%; min-height: 46px; padding: 10px 20px; border: 0; border-radius: 12px; background: var(--color-action-sky); color: var(--color-text-ink); font-size: 14px; font-weight: 500; cursor: pointer; }
 .chi-primary:hover:not(:disabled) { background: var(--color-action-sky-hover); }
 .chi-dialog button:disabled { opacity: .45; cursor: default; }
@@ -33,12 +30,14 @@
 .chi-orb--two { bottom: -140px; left: -90px; background: var(--color-action-sky); }
 .ch__info--button { padding: 0; background: none; cursor: pointer; }
 .ch__info--button:hover { color: var(--ch-title); border-color: var(--ch-title); }
-.chi-questions { display: grid; gap: 18px; width: 100%; max-width: 400px; }
-.chi-question { position: relative; z-index: 1; display: flex; align-items: flex-start; gap: 12px; width: 100%; box-sizing: border-box; padding: 20px 22px; border: 1px solid var(--chi-border); border-radius: 20px 20px 5px 20px; background: var(--color-background-paper); box-shadow: var(--shadow-soft); color: var(--color-text-ink); font-size: 17px; font-weight: 500; line-height: 1.65; }
-.chi-question span { min-width: 0; overflow-wrap: anywhere; }
-.chi-question svg { flex-shrink: 0; margin-top: 3px; color: var(--color-action-sky-hover); }
-.chi-scope summary:focus-visible { outline: 2px solid var(--color-action-sky-hover); outline-offset: 4px; }
-@media (max-height: 770px) and (min-width: 741px) { .chi-copy { padding: 40px 36px 30px; } .chi-copy h2 { font-size: 32px; } .chi-description { margin: 20px 0 30px; } .chi-visual { min-height: 480px; } .chi-questions { gap: 18px; } }
-@media (max-height: 625px) and (min-width: 741px) { .chi-copy { padding: 28px 32px 24px; } .chi-copy h2 { font-size: 28px; } .chi-description { margin: 16px 0 22px; font-size: 13px; } .chi-visual { min-height: 420px; padding: 32px; } .chi-question { padding: 16px 18px; font-size: 16px; } }
-@media (max-width: 740px) { .chi-backdrop { padding: 16px; } .chi-dialog { width: min(470px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow-y: auto; border-radius: 21px; } .chi-copy { overflow: visible; padding: 36px 28px 28px; flex-shrink: 0; } .chi-copy h2 { font-size: 29px; } .chi-close { color: var(--chi-muted); top: 15px; right: 15px; } .chi-description { margin: 20px 0 28px; } .chi-visual { min-height: 0; padding: 32px 28px; flex-shrink: 0; } .chi-question { font-size: 16px; padding: 18px 20px; } }
+.chi-icon-flow { display: flex; align-items: center; justify-content: center; gap: 17px; margin: 0 0 34px; color: color-mix(in srgb, var(--color-action-sky-hover) 65%, var(--color-text-ink)); }
+.chi-icon-flow > svg { flex-shrink: 0; opacity: .5; }
+.chi-icon-flow > .chi-icon-flow__main { opacity: 1; }
+.chi-icon-flow > i { width: 25px; height: 4px; background: radial-gradient(circle, var(--color-action-sky-hover) 1.7px, transparent 2px) 0 0 / 9px 4px; opacity: .5; }
+.chi-questions { width: 100%; max-width: 400px; box-sizing: border-box; padding: 6px 27px; border: 1px solid var(--chi-border); border-radius: 23px; background: var(--color-background-paper); box-shadow: var(--shadow-soft); }
+.chi-question { margin: 0; padding: 21px 0; color: var(--color-text-ink); font-size: 16px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.chi-question + .chi-question { border-top: 1px solid var(--chi-border); }
+@media (max-height: 770px) and (min-width: 741px) { .chi-copy { padding: 40px 36px 30px; } .chi-copy h2 { font-size: 32px; } .chi-description { margin: 20px 0 30px; } .chi-visual { min-height: 480px; } .chi-icon-flow { margin-bottom: 28px; } }
+@media (max-height: 625px) and (min-width: 741px) { .chi-copy { padding: 28px 32px 24px; } .chi-copy h2 { font-size: 28px; } .chi-description { margin: 16px 0 22px; font-size: 13px; } .chi-visual { min-height: 420px; padding: 32px; } .chi-icon-flow { margin-bottom: 22px; gap: 13px; } .chi-icon-flow > svg { width: 36px; height: 36px; } .chi-question { padding: 16px 0; font-size: 15px; } }
+@media (max-width: 740px) { .chi-backdrop { padding: 16px; } .chi-dialog { width: min(470px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow-y: auto; border-radius: 21px; } .chi-copy { overflow: visible; padding: 36px 28px 28px; flex-shrink: 0; } .chi-copy h2 { font-size: 29px; } .chi-close { color: var(--chi-muted); top: 15px; right: 15px; } .chi-description { margin: 20px 0 28px; } .chi-visual { min-height: 0; padding: 32px 28px; flex-shrink: 0; } .chi-icon-flow { margin-bottom: 24px; gap: 13px; } .chi-icon-flow > svg { width: 36px; height: 36px; } .chi-questions { padding: 5px 21px; } .chi-question { font-size: 15px; padding: 18px 0; } }
 @media (prefers-reduced-motion: reduce) { .chi-switch, .chi-switch span { transition: none; } }
