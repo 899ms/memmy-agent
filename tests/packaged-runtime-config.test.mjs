@@ -79,13 +79,22 @@ describe("packaged desktop runtime configuration", () => {
   });
 
   it.each([
-    "http://api.example.test",
+    "ftp://api.example.test",
     "https://user:pass@api.example.test",
     "https://api.example.test/path",
     "https://api.example.test?token=value",
     "https://api.example.test/#fragment",
   ])("rejects a non-public cloud-service value: %s", (value) => {
     expect(() => normalizePublicCloudService(value)).toThrow(/MEMMY_CLOUD_SERVICE/);
+  });
+
+  it.each([
+    ["http://127.0.0.1:8101", "http://127.0.0.1:8101"],
+    ["http://localhost:8101/", "http://localhost:8101"],
+    ["http://[::1]:8101", "http://[::1]:8101"],
+    ["http://192.0.2.10:8101", "http://192.0.2.10:8101"],
+  ])("allows an HTTP cloud-service origin: %s", (value, expected) => {
+    expect(normalizePublicCloudService(value)).toBe(expected);
   });
 
   it("removes runtime env files and symlinks without touching normal files", async () => {

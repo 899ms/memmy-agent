@@ -1101,6 +1101,10 @@ export type AccountChannel = z.infer<typeof AccountChannelSchema>;
 export const AccountLocaleSchema = z.enum(["zh", "en"]);
 export type AccountLocale = z.infer<typeof AccountLocaleSchema>;
 
+/** Third-party sign-in providers supported by the international desktop package. */
+export const SocialLoginProviderSchema = z.enum(["google", "github"]);
+export type SocialLoginProvider = z.infer<typeof SocialLoginProviderSchema>;
+
 /** Definition for send code input. */
 export const SendCodeInputSchema = z
     .object({
@@ -1195,6 +1199,48 @@ export const AccountLoginResultViewSchema = z.object({
     invitationResult: InvitationResultSchema
 });
 export type AccountLoginResultView = z.infer<typeof AccountLoginResultViewSchema>;
+
+/** Starts a browser-based social-login flow. */
+export const StartSocialLoginInputSchema = z.object({
+    provider: SocialLoginProviderSchema,
+    locale: AccountLocaleSchema,
+    loginSource: z.literal("Memmy"),
+    invitationCode: z.string().trim().max(12).optional()
+});
+export type StartSocialLoginInput = z.infer<typeof StartSocialLoginInputSchema>;
+
+/** Opaque credentials used by the desktop client to poll a social-login flow. */
+export const StartSocialLoginResponseSchema = z.object({
+    flowId: z.string().min(16),
+    pollToken: z.string().min(32),
+    authorizationUrl: z.string().url(),
+    expiresInSec: z.number().int().positive().max(1800),
+    pollIntervalSec: z.number().int().positive().max(30)
+});
+export type StartSocialLoginResponse = z.infer<typeof StartSocialLoginResponseSchema>;
+
+/** Identifies a previously started social-login flow. */
+export const SocialLoginStatusInputSchema = z.object({
+    flowId: z.string().min(16),
+    pollToken: z.string().min(32)
+});
+export type SocialLoginStatusInput = z.infer<typeof SocialLoginStatusInputSchema>;
+
+/** Current state of a browser-based social-login flow. */
+export const SocialLoginStatusResponseSchema = z.discriminatedUnion("status", [
+    z.object({ status: z.literal("pending") }),
+    z.object({
+        status: z.literal("completed"),
+        result: AccountLoginResultViewSchema
+    }),
+    z.object({
+        status: z.literal("failed"),
+        code: z.string().min(1).optional(),
+        message: z.string().min(1)
+    }),
+    z.object({ status: z.literal("expired") })
+]);
+export type SocialLoginStatusResponse = z.infer<typeof SocialLoginStatusResponseSchema>;
 
 /** Current account invitation code and today's reserved-slot summary. */
 export const AccountInvitationViewSchema = z.object({
