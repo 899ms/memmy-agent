@@ -44,10 +44,7 @@
 .chi-demo__answer { margin: 0; color: var(--color-text-ink); font-size: 14px; font-weight: 400; line-height: 1.75; overflow-wrap: anywhere; }
 .chi-demo__composer { margin-top: 28px; padding: 12px 12px 9px; border: 1px solid var(--border-content-panel); border-radius: var(--radius-composer); background: var(--color-background-paper); box-shadow: 0 8px 20px color-mix(in srgb, var(--color-text-ink) 3%, transparent); }
 .chi-demo__composer p { margin: 0 0 20px; color: color-mix(in srgb, var(--color-text-ink) 40%, transparent); font-size: 12px; line-height: 1.6; }
-.chi-demo__toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; color: color-mix(in srgb, var(--color-text-ink) 48%, transparent); }
-.chi-demo__model { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin-right: 5px; font-size: 11px; line-height: 1.4; }
-.chi-demo__model svg { flex-shrink: 0; }
-.chi-demo__tool { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; }
+.chi-demo__toolbar { display: flex; justify-content: flex-end; }
 .chi-demo__send { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%; background: color-mix(in srgb, var(--color-text-ink) 25%, transparent); color: var(--color-background-paper); }
 .chi-pagination { position: absolute; top: 100%; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 14px; }
 .chi-pagination__arrow { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid color-mix(in srgb, var(--color-action-sky-hover) 15%, transparent); border-radius: 50%; background: color-mix(in srgb, var(--color-background-paper) 55%, transparent); color: var(--chi-muted); cursor: pointer; }
