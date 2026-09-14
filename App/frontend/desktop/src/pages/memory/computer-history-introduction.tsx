@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FileText, History, ListTodo, WandSparkles, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, History, Mic, Plus, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -144,7 +144,6 @@ export function ComputerHistoryIntroduction(props: {
           <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
-          <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
           <HistoryExamples />
         </div>
       </section>
@@ -153,9 +152,9 @@ export function ComputerHistoryIntroduction(props: {
 }
 
 const historyExamples = [
-  { title: "historyIntro.publishTitle", question: "historyIntro.examplePublish", source: "historyIntro.publishSource", answer: "historyIntro.publishAnswer", result: "historyIntro.publishResult", detail: "historyIntro.publishDetail", icon: WandSparkles },
-  { title: "historyIntro.todosTitle", question: "historyIntro.exampleTodos", source: "historyIntro.todosSource", answer: "historyIntro.todosAnswer", result: "historyIntro.todosResult", detail: "historyIntro.todosDetail", icon: ListTodo },
-  { title: "historyIntro.documentTitle", question: "historyIntro.exampleDocument", source: "historyIntro.documentSource", answer: "historyIntro.documentAnswer", result: "historyIntro.documentResult", detail: "historyIntro.documentDetail", icon: FileText },
+  { title: "historyIntro.publishTitle", question: "historyIntro.examplePublish", source: "historyIntro.publishSource", answer: "historyIntro.publishAnswer" },
+  { title: "historyIntro.todosTitle", question: "historyIntro.exampleTodos", source: "historyIntro.todosSource", answer: "historyIntro.todosAnswer" },
+  { title: "historyIntro.documentTitle", question: "historyIntro.exampleDocument", source: "historyIntro.documentSource", answer: "historyIntro.documentAnswer" },
 ] as const;
 
 /** Illustrative content only. Browsing examples never queries activity or applies settings. */
@@ -163,7 +162,6 @@ function HistoryExamples() {
   const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const example = historyExamples[index] ?? historyExamples[0];
-  const ResultIcon = example.icon;
   const move = (direction: number) => setIndex((current) => (current + direction + historyExamples.length) % historyExamples.length);
 
   return (
@@ -183,9 +181,16 @@ function HistoryExamples() {
             <small>{t(example.source)}</small>
           </div>
           <p className="chi-demo__answer">{t(example.answer)}</p>
-          <div className="chi-demo__result">
-            <ResultIcon size={20} strokeWidth={1.6} aria-hidden="true" />
-            <div><strong>{t(example.result)}</strong><p>{t(example.detail)}</p></div>
+        </div>
+        <div className="chi-demo__composer" role="img" aria-label={t("historyIntro.composerPreview")}>
+          <div aria-hidden="true">
+            <p>{t("home.input")}</p>
+            <div className="chi-demo__toolbar">
+              <span className="chi-demo__model">{t("home.modelSelector.platformAgent")}<ChevronDown size={12} /></span>
+              <span className="chi-demo__tool"><Plus size={15} /></span>
+              <span className="chi-demo__tool"><Mic size={15} /></span>
+              <span className="chi-demo__send"><Send size={13} /></span>
+            </div>
           </div>
         </div>
       </div>
