@@ -297,6 +297,21 @@ describe("raw event retention", () => {
   });
 });
 
+describe("deleting while recording", () => {
+  it("refuses to delete the window the recorder is still writing into", () => {
+    const instance = service();
+    const segmentId = instance.startObservation().observation.segmentId!;
+    const directory = instance.snapshot().privacy.markdownDirectory;
+    fs.writeFileSync(path.join(directory, `${segmentId}-10min-summary.md`),
+      '---\ntitle: "Now"\nsource_type: captured\nsummary_state: ready\n---\n\nbody\n', "utf8");
+
+    // Deleting it removed the directory the recorder writes to, and recording
+    // carried on showing "running" while nothing more was kept.
+    expect(() => instance.deleteHistory(`${segmentId}-10min-summary`)).toThrow(/stop recording before deleting/);
+    expect(instance.snapshot().observation.state).toBe("running");
+  });
+});
+
 describe("pinning raw events", () => {
   const RETENTION_MS = 48 * 60 * 60 * 1000;
 

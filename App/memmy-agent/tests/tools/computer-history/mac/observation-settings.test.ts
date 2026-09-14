@@ -68,6 +68,21 @@ describe("observation settings", () => {
     })).toEqual({ observe: false, reason: "url_not_allowed" });
   });
 
+  it("blocks unknown browser URLs when website rules restrict capture", () => {
+    for (const policy of [
+      settings("observe", "do_not_observe"),
+      settings("observe", "observe", [{ scope: "url", urlDomain: "bank.com", behavior: "do_not_observe" }]),
+    ]) {
+      for (const url of [undefined, "", "not a url", "chrome://newtab/"]) {
+        expect(evaluateObservation(policy, { bundleId: "com.google.Chrome", url }).observe).toBe(false);
+        expect(evaluateObservation(policy, { bundleId: "company.thebrowser.Browser", url }).observe).toBe(false);
+        expect(evaluateObservation(policy, { bundleId: "com.example.NewBrowser", browser: true, url }).observe).toBe(false);
+      }
+      expect(evaluateObservation(policy, { bundleId: "com.apple.Notes" }).observe).toBe(true);
+    }
+    expect(evaluateObservation(DEFAULT_OBSERVATION_SETTINGS, { bundleId: "com.google.Chrome" }).observe).toBe(true);
+  });
+
   it("lets a block rule win over an allow rule inside the same axis", () => {
     const conflicting = settings("observe", "observe", [
       { scope: "url", urlDomain: "example.com", behavior: "observe" },

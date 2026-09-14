@@ -65,13 +65,15 @@ export type ComputerHistoryEntry = {
   description: string | null;
   applications: string[];
   summaryWindow: "10min" | "6h" | null;
+  coveredHistoryIds: string[];
   pinned: boolean;
   eventStreamPath: string | null;
   id: string;
   title: string;
   sourceType: ComputerHistorySourceType;
   createdAt: string;
-  markdown: string;
+  /** Not sent to the client: the timeline shows the description, never the body. */
+  markdown?: string;
   filePath: string;
   replayPlan?: ComputerHistoryReplayPlan | null;
 };
@@ -93,14 +95,6 @@ export type ComputerHistorySnapshot = {
     segmentStartedAt: string | null;
     error: string | null;
     narrationError: string | null;
-  };
-  cuaRun: {
-    kind: "smoke" | "workflow" | null;
-    status: "idle" | "running" | "completed" | "failed";
-    startedAt: string | null;
-    finishedAt: string | null;
-    output: string;
-    error: string | null;
   };
   histories: ComputerHistoryEntry[];
   workflows: ComputerHistoryWorkflow[];
@@ -711,6 +705,7 @@ export interface MemmyAgentClient {
   getSettings(): Promise<MemmyAgentSettings>;
   getComputerHistory(): Promise<ComputerHistorySnapshot>;
   deleteComputerHistory(historyId: string): Promise<ComputerHistorySnapshot>;
+  clearComputerHistories(scope: "today" | "all"): Promise<ComputerHistorySnapshot>;
   pinComputerHistory(historyId: string, pinned: boolean): Promise<ComputerHistorySnapshot>;
   importComputerHistory(input: { title?: string; markdown: string }): Promise<ComputerHistorySnapshot>;
   startComputerHistoryObservation(): Promise<ComputerHistorySnapshot>;
@@ -718,7 +713,6 @@ export interface MemmyAgentClient {
   resumeComputerHistoryObservation(): Promise<ComputerHistorySnapshot>;
   stopComputerHistoryObservation(): Promise<ComputerHistorySnapshot>;
   createComputerHistoryWorkflow(historyId: string, userRequest: string): Promise<ComputerHistorySnapshot>;
-  startComputerHistoryCua(workflowId: string, variables: string[]): Promise<ComputerHistorySnapshot>;
   getApplicationIcon(bundleId: string): Promise<string | null>;
   getSessionSnapshot(options?: MemmyAgentRequestOptions): Promise<MemmyAgentSessionSnapshot>;
   listSessions(): Promise<MemmyAgentSessionSummary[]>;
@@ -1069,6 +1063,14 @@ class HttpMemmyAgentClient implements MemmyAgentClient {
       body: { history_id: historyId }
     });
   }
+
+  async clearComputerHistories(scope: "today" | "all"): Promise<ComputerHistorySnapshot> {
+    return this.request("/api/computer-history/clear", ComputerHistorySnapshotSchema, {
+      method: "POST",
+      body: { scope }
+    });
+  }
+
   async pinComputerHistory(historyId: string, pinned: boolean): Promise<ComputerHistorySnapshot> {
     return this.request("/api/computer-history/pin", ComputerHistorySnapshotSchema, {
       method: "POST",
@@ -1101,13 +1103,6 @@ class HttpMemmyAgentClient implements MemmyAgentClient {
     return this.request("/api/computer-history/workflows/create", ComputerHistorySnapshotSchema, {
       method: "POST",
       body: { history_id: historyId, user_request: userRequest }
-    });
-  }
-
-  async startComputerHistoryCua(workflowId: string, variables: string[]): Promise<ComputerHistorySnapshot> {
-    return this.request("/api/computer-history/cua/start", ComputerHistorySnapshotSchema, {
-      method: "POST",
-      body: { workflow_id: workflowId, variables }
     });
   }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import {
   isStopHotkey,
   normalizeKeyBurst,
@@ -7,8 +7,16 @@ import {
   searchInputContextFromAccessibility,
   appFrom,
   isSecureInput,
+  recordingStep,
+  scrubAccessibility,
+  scrubAxSnapshot,
   shouldObserve,
 } from "../../../../src/tools/computer-history/mac/record-human-history.js";
+import type {
+  ObservationBehavior,
+  ObservationRule,
+  ObservationSettings,
+} from "../../../../src/tools/computer-history/mac/observation-settings.js";
 
 const notes = { name: "Notes", bundleId: "com.apple.Notes", pid: 42 };
 
@@ -72,6 +80,15 @@ test("recognizes semantic search fields but not ordinary or secure text fields",
     role: "AXSecureTextField",
     description: "Password",
   }), null);
+  assert.equal(searchInputContextFromAccessibility({
+    role: "AXTextField", subrole: "AXSecureTextField", description: "Search password",
+  }), null);
+  assert.equal(searchInputContextFromAccessibility({
+    role: "AXGroup", children: [{ role: "AXSearchField", description: "Search elsewhere" }],
+  }), null);
+  assert.equal(searchInputContextFromAccessibility({
+    role: "AXSearchField", focused: { role: "AXTextField", description: "Customer ID" },
+  }), null);
 });
 
 test("retains text only for an explicitly allowed application", () => {
@@ -128,6 +145,21 @@ test("records shortcuts as semantic key presses", () => {
   assert.deepEqual(normalized.details.keys, ["cmd+space"]);
 });
 
+test("legacy Shift/Option text cannot bypass retention by masquerading as shortcuts", () => {
+  for (const secureInput of [false, true]) {
+    for (const [key, modifiers] of [["A", ["shift"]], ["!", ["shift"]], ["é", ["option"]]] as const) {
+      const event = shortcut(key, [...modifiers]);
+      event.app.secureInput = secureInput;
+      assert.deepEqual(normalizeKeyBurst([event], {
+        captureText: false, allowApps: [],
+      }).details.keys, ["[REDACTED]"]);
+    }
+  }
+  assert.deepEqual(normalizeKeyBurst([shortcut("C", ["cmd", "shift"])], {
+    captureText: false, allowApps: [],
+  }).details.keys, ["cmd+shift+C"]);
+});
+
 test("redacts credential-like text even in an allowed application", () => {
   const text = "api_key=super-secret-value";
   const events = [...text].map((character) => textInput(character));
@@ -169,12 +201,36 @@ test("reports secure input so keystroke text can be suppressed", () => {
   assert.equal(isSecureInput({ app: { secureInput: true } }), true);
 });
 
-// This table mirrors observation-settings.test.ts: the capture path and the
-// agent tools must agree on what the policy means.
-const policy = (defaultApp: string, defaultUrl: string, rules: Array<Record<string, string>> = []) => ({
-  defaultApplicationBehavior: defaultApp,
-  defaultURLBehavior: defaultUrl,
-  rules,
+// The capture path now asks the shared policy directly. These cases stay as a
+// check that it does, rather than keeping a copy of its own.
+const policy = (
+  defaultApp: ObservationBehavior,
+  defaultUrl: ObservationBehavior,
+  rules: ObservationRule[] = [],
+): ObservationSettings => ({
+  observation: { defaultApplicationBehavior: defaultApp, defaultURLBehavior: defaultUrl, rules },
+});
+
+test("never records a window its browser reports as private", () => {
+  // The helper sets privateBrowsing for Chrome and Arc; the exclusion used to
+  // exist only in a policy function the capture path never called.
+  const everything = policy("observe", "observe", [
+    { scope: "app", bundleID: "com.google.Chrome", behavior: "observe" },
+  ]);
+  assert.equal(shouldObserve(everything, { bundleId: "com.google.Chrome", url: "https://example.com/", privateBrowsing: true }), false);
+  assert.equal(shouldObserve(everything, { bundleId: "com.google.Chrome", url: "https://example.com/", privateBrowsing: false }), true);
+});
+
+test("never records the login window or the screen saver, whatever the rules say", () => {
+  // A locked Mac used to produce a summary of the lock screen for every
+  // window of the night.
+  const everything = policy("observe", "observe", [
+    { scope: "app", bundleID: "com.apple.loginwindow", behavior: "observe" },
+  ]);
+  assert.equal(shouldObserve(everything, { bundleId: "com.apple.loginwindow" }), false);
+  assert.equal(shouldObserve(everything, { bundleId: "com.apple.ScreenSaver.Engine" }), false);
+  assert.equal(shouldObserve(null, { bundleId: "com.apple.loginwindow" }), false);
+  assert.equal(shouldObserve(everything, { bundleId: "com.apple.Notes" }), true);
 });
 
 test("records nothing until an application is allowed", () => {
@@ -213,4 +269,79 @@ test("keeps the two axes independent", () => {
   ]);
   // Allowing the site cannot rescue a disallowed application.
   assert.equal(shouldObserve(settings, { bundleId: "com.google.Chrome", url: "https://example.com/a" }), false);
+});
+
+// ---- What reaches disk ----
+
+test("keeps what a window says, including what is in its text areas", () => {
+  // Withholding every text area's value emptied the summaries: a text area is
+  // as often a terminal, a transcript or a document as a draft.
+  const scrubbed = scrubAccessibility({
+    role: "AXTextArea",
+    title: "国蝻分部",
+    value: "说不定可以吗",
+    focused: { role: "AXStaticText", value: "Mom: see you at 7" },
+  }) as Record<string, any>;
+  assert.equal(scrubbed.value, "说不定可以吗");
+  assert.equal(scrubbed.focused.value, "Mom: see you at 7");
+});
+
+test("withholds a password field and masks credentials anywhere", () => {
+  const scrubbed = scrubAccessibility({
+    role: "AXTextField",
+    subrole: "AXSecureTextField",
+    value: "hunter2",
+    descendants: [
+      { role: "AXButton", title: "Bearer abcdefghijklmnop1234" },
+      { role: "AXTextField", value: "sk-proj-9f2KxQ7mLpA3vR8tYw1ZcN4bH6jD0eUsGiTo5qFa" },
+    ],
+  }) as Record<string, any>;
+  assert.equal(scrubbed.value, "[REDACTED]");
+  assert.doesNotMatch(scrubbed.descendants[0].title, /abcdefghijklmnop1234/);
+  assert.doesNotMatch(scrubbed.descendants[1].value, /sk-proj-9f2K/);
+});
+
+test("keeps window snapshots readable, full or diff, masking only credentials", () => {
+  const full = scrubAxSnapshot({
+    mode: "fullTree",
+    text: [
+      "AXStaticText||Inbox|||",
+      "AXTextArea||Body|||the plan for Friday",
+      "AXTextField|AXSecureTextField|Password|||hunter2",
+      "AXStaticText||||| token: sk-proj-9f2KxQ7mLpA3vR8tYw1ZcN4bH6jD0eUsGiTo5qFa",
+    ].join("\n"),
+  }) as { text: string };
+  assert.match(full.text, /the plan for Friday/);
+  assert.doesNotMatch(full.text, /hunter2|sk-proj-9f2K/);
+  const diff = scrubAxSnapshot({
+    mode: "diffFromPrevious",
+    text: ["- AXTextField||Search|||old query", "+ AXTextField||Search|||new query"].join("\n"),
+  }) as { text: string };
+  assert.match(diff.text, /^- AXTextField\|\|Search\|\|\|old query$/m);
+  assert.match(diff.text, /^\+ AXTextField\|\|Search\|\|\|new query$/m);
+});
+
+// ---- The event chain ----
+
+test("one failed event no longer stops every event after it", async () => {
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const fatal = vi.fn();
+  const step = recordingStep(fatal);
+  const written: number[] = [];
+  let chain: Promise<void> = Promise.resolve();
+  for (const n of [1, 2, 3, 4]) {
+    chain = chain.then(step(async () => {
+      if (n === 2) throw new TypeError("a malformed helper event");
+      written.push(n);
+    }));
+  }
+  await chain;
+  assert.deepEqual(written, [1, 3, 4]);
+  assert.equal(fatal.mock.calls.length, 0);
+
+  // A write that fails cannot be retried, so it ends the recording visibly.
+  const failure = Object.assign(new Error("no such directory"), { code: "ENOENT" });
+  await step(async () => { throw failure; })();
+  assert.equal(fatal.mock.calls.length, 1);
+  errors.mockRestore();
 });

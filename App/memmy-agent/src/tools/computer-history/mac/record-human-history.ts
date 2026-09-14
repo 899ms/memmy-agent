@@ -9,6 +9,15 @@ import path from "node:path";
 import readline from "node:readline";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { redactSensitive } from "./redaction.js";
+import {
+  BROWSER_BUNDLE_IDS,
+  DEFAULT_OBSERVATION_SETTINGS,
+  evaluateObservation,
+  parseObservationSettings,
+  type ObservationSettings,
+  type ObservationSubject,
+} from "./observation-settings.js";
 
 /** A line from the Swift helper. Its fields depend on `kind`. */
 type HelperEvent = Record<string, any>;
@@ -38,19 +47,6 @@ interface SearchInputContext {
   label: string;
 }
 
-interface ObservationRule {
-  scope?: string;
-  behavior?: string;
-  bundleID?: string;
-  urlDomain?: string;
-}
-
-interface RecorderObservationSettings {
-  defaultApplicationBehavior: string;
-  defaultURLBehavior: string;
-  rules: ObservationRule[];
-}
-
 interface NormalizedEvent {
   eventType: string;
   application: Application;
@@ -73,7 +69,6 @@ const HELPER_SOURCE = path.join(SCRIPT_DIR, "human-recorder.swift");
 // Where the service keeps recordings. This was once resolved against the
 // repository root, which a packaged app does not have.
 const DEFAULT_RECORDINGS_DIR = path.join(os.homedir(), ".memmy", "computer-history", "recordings");
-const BROWSER_BUNDLE_IDS = new Set(["com.google.Chrome", "com.apple.Safari"]);
 const TEXT_IDLE_MS = 700;
 const NAVIGATION_SETTLE_MS = 900;
 
@@ -93,7 +88,7 @@ Options:
   --no-screenshots        record events without key screenshots
   --help                  show this help
 
-Press control+option+cmd+r while the result remains visible to stop and capture the final screen.
+Press control+option+cmd+r while the result remains visible to stop recording.
 Returning to this terminal and pressing Enter (or Ctrl+C) is also supported.`);
 }
 
@@ -156,16 +151,6 @@ function normalizedContextUrl(value: string | undefined): string | null {
   return url.toString();
 }
 
-function redactSensitive(value: unknown): string {
-  return String(value ?? "")
-    .replace(/\bBearer\s+[a-z0-9._~+/-]{12,}/gi, "Bearer [REDACTED]")
-    .replace(/\bsk-[a-z0-9_-]{12,}\b/gi, "[REDACTED]")
-    .replace(
-      /((?:api[ _-]?key|access[ _-]?token|auth[ _-]?token|password|secret)\s*[:=]\s*)[^\s,]+/gi,
-      "$1[REDACTED]",
-    );
-}
-
 function appAllowed(application: Application | undefined, allowedApps: string[]): boolean {
   return Boolean(application?.bundleId && allowedApps.includes(application.bundleId));
 }
@@ -191,101 +176,153 @@ const SEARCH_INPUT_HINT = /(?:\bsearch\b|\bquery\b|\bfind\b|address and search|�
 
 export function searchInputContextFromAccessibility(accessibility: any): SearchInputContext | null {
   if (!accessibility || typeof accessibility !== "object") return null;
-  const queue: any[] = [accessibility.focused, accessibility].filter(Boolean);
-  const seen = new Set<object>();
-  let visited = 0;
-  while (queue.length && visited < 64) {
-    const node = queue.shift();
-    if (!node || typeof node !== "object" || seen.has(node)) continue;
-    seen.add(node);
-    visited += 1;
-    const role = typeof node.role === "string" ? node.role : "";
-    const subrole = typeof node.subrole === "string" ? node.subrole : "";
-    const label = [node.title, node.description, node.identifier]
-      .filter((value) => typeof value === "string")
-      .join(" ")
-      .trim();
-    if (
-      SEARCH_INPUT_ROLES.has(role)
-      || SEARCH_INPUT_ROLES.has(subrole)
-      || (SEARCHABLE_TEXT_INPUT_ROLES.has(role) && SEARCH_INPUT_HINT.test(label))
-    ) {
-      return { purpose: "search_query", role: subrole || role, label: label.slice(0, 240) };
-    }
-    for (const value of Object.values(node)) {
-      if (Array.isArray(value)) queue.push(...value);
-      else if (value && typeof value === "object") queue.push(value);
-    }
+  // Only the current target (or its explicitly focused element) grants text
+  // retention. A search field elsewhere in a window is not evidence of focus.
+  const node = accessibility.focused ?? accessibility;
+  if (!node || typeof node !== "object") return null;
+  const role = typeof node.role === "string" ? node.role : "";
+  const subrole = typeof node.subrole === "string" ? node.subrole : "";
+  if (role === "AXSecureTextField" || subrole === "AXSecureTextField") return null;
+  const label = [node.title, node.description, node.identifier]
+    .filter((value) => typeof value === "string")
+    .join(" ")
+    .trim();
+  if (
+    SEARCH_INPUT_ROLES.has(role)
+    || SEARCH_INPUT_ROLES.has(subrole)
+    || (SEARCHABLE_TEXT_INPUT_ROLES.has(role) && SEARCH_INPUT_HINT.test(label))
+  ) {
+    return { purpose: "search_query", role: subrole || role, label: label.slice(0, 240) };
   }
   return null;
+}
+
+const REDACTED = "[REDACTED]";
+
+// What a window shows is what Computer History exists to read, so a control's
+// text is kept. Withholding every text area's value was tried and emptied the
+// summaries: a text area is as often a terminal, a transcript or a document as
+// a draft. What is withheld is what is never content — a password field — and
+// credential patterns wherever they appear.
+function keepsFieldValue(subrole: string): boolean {
+  return subrole !== "AXSecureTextField";
+}
+
+/**
+ * Scrubs an accessibility payload before it is written: a password field's
+ * value is withheld, and every string has credential patterns masked.
+ */
+export function scrubAccessibility(value: unknown): unknown {
+  if (typeof value === "string") return redactSensitive(value);
+  if (Array.isArray(value)) return value.map((item) => scrubAccessibility(item));
+  if (!value || typeof value !== "object") return value;
+  const node = value as Record<string, unknown>;
+  const subrole = typeof node.subrole === "string" ? node.subrole : "";
+  const keep = keepsFieldValue(subrole);
+  const scrubbed: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(node)) {
+    scrubbed[key] = key === "value" && !keep && typeof field === "string" && field
+      ? REDACTED
+      : scrubAccessibility(field);
+  }
+  return scrubbed;
+}
+
+// A window snapshot line is `role|subrole|title|description|identifier|value`,
+// prefixed with `+ ` or `- ` when the snapshot is a diff.
+function scrubTreeLine(line: string): string {
+  const prefix = /^[+-] /u.test(line) ? line.slice(0, 2) : "";
+  const parts = line.slice(prefix.length).split("|");
+  const [role = "", subrole = ""] = parts;
+  if (keepsFieldValue(subrole)) {
+    return prefix + redactSensitive(parts.join("|"));
+  }
+  if (parts.length === 6 && !parts[5]) return prefix + redactSensitive(parts.join("|"));
+  // A `|` inside any field shifts the value to the right, so when the line does
+  // not split cleanly keep only the role and drop the rest rather than guess.
+  const labels = parts.length === 6 ? parts.slice(0, 5) : [role, subrole, "", "", ""];
+  return prefix + [...labels.map(redactSensitive), REDACTED].join("|");
+}
+
+/** Scrubs a window snapshot, full or diff, line by line. */
+export function scrubAxSnapshot(ax: unknown): unknown {
+  if (!ax || typeof ax !== "object") return ax;
+  const snapshot = ax as Record<string, unknown>;
+  if (typeof snapshot.text !== "string") return scrubAccessibility(ax);
+  return {
+    ...snapshot,
+    text: snapshot.text.split("\n").map((line) => scrubTreeLine(line)).join("\n"),
+  };
+}
+
+interface AxBaseline {
+  windowKey: string;
+  lines: string[];
+}
+
+function prepareAuthorizedAxSnapshot(ax: unknown, previous: AxBaseline | null): {
+  snapshot: Record<string, unknown> | null;
+  baseline: AxBaseline | null;
+} {
+  const current = scrubAxSnapshot(ax) as Record<string, unknown> | null;
+  // Only complete native observations can establish permission to store text.
+  // Legacy/unknown diffs may contain removed text from an excluded interval.
+  if (current?.mode !== "fullTree" || typeof current.text !== "string") {
+    return { snapshot: null, baseline: null };
+  }
+  const lines = current.text.split("\n");
+  const baseline = typeof current.windowKey === "string"
+    ? { windowKey: current.windowKey, lines } : null;
+  if (!baseline || previous?.windowKey !== baseline.windowKey) return { snapshot: current, baseline };
+  if (previous.lines.length === lines.length && previous.lines.every((line, index) => line === lines[index])) {
+    return { snapshot: null, baseline };
+  }
+  const before = new Set(previous.lines);
+  const after = new Set(lines);
+  const removed = previous.lines.filter((line) => !after.has(line));
+  const added = lines.filter((line) => !before.has(line));
+  const changed = removed.length + added.length;
+  // Reordering/duplicate rows cannot be represented by a set-based diff.
+  if (!changed || before.size !== previous.lines.length || after.size !== lines.length
+    || changed > Math.max(lines.length, 1) * 0.6) return { snapshot: current, baseline };
+  return { snapshot: { ...current, mode: "diffFromPrevious",
+    text: [...removed.map((line) => `- ${line}`), ...added.map((line) => `+ ${line}`)].join("\n") }, baseline };
 }
 
 // The recorder now classifies keystrokes itself, so the consumer no longer has
 // to infer printability from modifiers: a keyboard.text_input event is text by
 // construction, and secure-input windows never produce one.
-// Mirrors ./observation-settings.ts. The recorder was a standalone script
-// outside the TypeScript build, so it could not import the policy and carried
-// its own copy; the tables in the two test files are kept identical. Now that
-// both compile together, the copy can be replaced with an import.
-function loadObservationSettings(file: string | undefined): RecorderObservationSettings | null {
-  if (!file) return null;
+
+// The recorder decides with the same policy the service and the agent tools
+// describe. It used to carry a copy, because as a standalone script it could
+// not import one, and the copy drifted: it lacked the unconditional
+// exclusions, and read a missing default as "record nothing".
+function loadObservationSettings(file: string | undefined): ObservationSettings {
+  if (!file) return DEFAULT_OBSERVATION_SETTINGS;
   try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    const observation = parsed?.observation;
-    if (!observation) return null;
-    return {
-      defaultApplicationBehavior: observation.defaultApplicationBehavior ?? "do_not_observe",
-      defaultURLBehavior: observation.defaultURLBehavior ?? "observe",
-      rules: Array.isArray(observation.rules) ? observation.rules : [],
-    };
+    return parseObservationSettings(JSON.parse(fs.readFileSync(file, "utf8")));
   } catch {
-    // The service writes and validates this file before spawning the recorder,
-    // so reaching here means it went missing mid-run. Fall back to the same
-    // defaults the service would have written rather than silently recording
-    // nothing, which looks identical to a broken recorder.
-    return { defaultApplicationBehavior: "observe", defaultURLBehavior: "observe", rules: [] };
+    // An explicit policy that is temporarily unreadable must not revert to
+    // recording everything. The next event retries the current file.
+    return { observation: {
+      defaultApplicationBehavior: "do_not_observe",
+      defaultURLBehavior: "do_not_observe",
+      rules: [],
+    } };
   }
 }
 
-function hostFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return parsed.hostname.trim().toLowerCase().replace(/^\.+|\.+$/g, "") || null;
-  } catch {
-    return null;
-  }
+function observationSubject(event: HelperEvent): ObservationSubject {
+  return {
+    bundleId: appFrom(event).bundleId,
+    browser: event.window?.browser === true,
+    url: typeof event.window?.url === "string" ? event.window.url : null,
+    privateBrowsing: event.window?.privateBrowsing === true,
+  };
 }
 
-function domainMatches(host: string, domain: unknown): boolean {
-  const normalized = String(domain ?? "").trim().toLowerCase().replace(/^\.+|\.+$/g, "");
-  if (!normalized) return false;
-  return host === normalized || host.endsWith(`.${normalized}`);
-}
-
-// A block rule always wins inside its own axis.
-function resolveAxis(matching: ObservationRule[], fallback: string): string {
-  if (matching.some((rule) => rule.behavior === "do_not_observe")) return "do_not_observe";
-  if (matching.some((rule) => rule.behavior === "observe")) return "observe";
-  return fallback;
-}
-
-export function shouldObserve(
-  settings: RecorderObservationSettings | null,
-  subject: { bundleId?: string; url?: string | null },
-): boolean {
-  if (!settings) return true;
-  const appRules = settings.rules.filter(
-    (rule: ObservationRule) => rule.scope === "app" && subject.bundleId && rule.bundleID === subject.bundleId,
-  );
-  if (resolveAxis(appRules, settings.defaultApplicationBehavior) === "do_not_observe") return false;
-
-  const host = subject.url ? hostFromUrl(subject.url) : null;
-  if (!host) return true;
-  const urlRules = settings.rules.filter(
-    (rule: ObservationRule) => rule.scope === "url" && domainMatches(host, rule.urlDomain),
-  );
-  return resolveAxis(urlRules, settings.defaultURLBehavior) !== "do_not_observe";
+export function shouldObserve(settings: ObservationSettings | null, subject: ObservationSubject): boolean {
+  return evaluateObservation(settings ?? DEFAULT_OBSERVATION_SETTINGS, subject).observe;
 }
 
 function printableKey(event: HelperEvent): boolean {
@@ -301,7 +338,8 @@ export function normalizeKeyBurst(
 ): NormalizedEvent {
   const application = appFrom(events.at(-1));
   const rawText = events.filter(printableKey).map((event) => event.keyboard.text).join("");
-  const searchInput: SearchInputContext | null = events.at(-1)?.inputContext?.purpose === "search_query"
+  const searchInput: SearchInputContext | null = events.length > 0
+    && events.every((event) => event.inputContext?.purpose === "search_query")
     ? events.at(-1)!.inputContext
     : null;
   const retainText = (options.captureText && appAllowed(application, options.allowApps))
@@ -324,6 +362,12 @@ export function normalizeKeyBurst(
     const keyboard = event.keyboard ?? {};
     const modifiers = keyboard.modifiers ?? [];
     const key = event.kind === "keyboard.submit" ? "return" : keyboard.keyEquivalent;
+    // Defense in depth for helpers recorded before Shift/Option text was
+    // classified correctly. Such characters must obey the text policy too.
+    if (typeof key === "string" && [...key].length === 1
+      && !modifiers.some((modifier: string) => modifier === "cmd" || modifier === "control")) {
+      return "[REDACTED]";
+    }
     return [...modifiers, key].filter(Boolean).join("+");
   });
   return { eventType: "key_press", application, details: { keys } };
@@ -336,6 +380,32 @@ export function isStopHotkey(event: HelperEvent | undefined): boolean {
     && modifiers.has("cmd")
     && modifiers.has("control")
     && modifiers.has("option");
+}
+
+/**
+ * Wraps one link of the event chain so that a failure cannot break the chain.
+ *
+ * Every event is chained onto one promise, and a rejected link rejects every
+ * link after it: one failed write used to leave the recorder running while it
+ * silently dropped every event that followed, and the service still showed it
+ * recording. A write that fails cannot be retried into a destination that is
+ * gone or full, so it ends the recording where the service will report it;
+ * anything else costs only the event that caused it.
+ */
+export function recordingStep(onWriteFailure: () => void) {
+  return (task: () => Promise<void>) => async (): Promise<void> => {
+    try {
+      await task();
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code) {
+        console.error(`[recorder] skipped an event: ${(error as Error).message}`);
+        return;
+      }
+      console.error(`[recorder] cannot write the recording (${code}): ${(error as Error).message}`);
+      onWriteFailure();
+    }
+  };
 }
 
 async function ensureHelper(): Promise<string> {
@@ -438,8 +508,19 @@ export async function run(
 
   let sequence = 0;
   let lastPageContextUrl: string | null = null;
-  const searchInputContextByApp = new Map<string, SearchInputContext>();
-  const observationSettings = loadObservationSettings(args.observationSettings);
+  let axBaseline: AxBaseline | null = null;
+  let observationPolicyVersion: string | null = null;
+  const canObserve = (subject: ObservationSubject) => {
+    const settings = loadObservationSettings(args.observationSettings);
+    const version = JSON.stringify(settings);
+    if (version !== observationPolicyVersion) {
+      axBaseline = null;
+      observationPolicyVersion = version;
+    }
+    const allowed = shouldObserve(settings, subject);
+    if (!allowed) axBaseline = null;
+    return allowed;
+  };
   let pendingKeys: HelperEvent[] = [];
   let pendingKeyTimer: ReturnType<typeof setTimeout> | null = null;
   let processing: Promise<void> = Promise.resolve();
@@ -459,15 +540,19 @@ export async function run(
       application = {},
       details = {},
       ax = null,
+      subjects,
     }: {
       eventType: string;
       timestamp?: string;
       application?: Application;
       details?: Record<string, unknown>;
       ax?: unknown;
+      subjects?: ObservationSubject[];
     },
     screenshot = false,
   ) => {
+    const permitted = () => !subjects || subjects.every(canObserve);
+    if (!permitted()) return;
     sequence += 1;
     let screenshotPath = null;
     if (args.screenshots && screenshot) {
@@ -475,65 +560,98 @@ export async function run(
       try {
         await captureScreenshot(screenshotPath, permissions.mainDisplayWidth);
       } catch (error) {
+        fs.rmSync(screenshotPath, { force: true });
         screenshotPath = null;
         details = { ...details, screenshotError: (error as Error).message };
       }
     }
+    // Settings can change while capture awaits a system process. Never keep
+    // the resulting image or event after its application/site was excluded.
+    if (!permitted()) {
+      if (screenshotPath) fs.rmSync(screenshotPath, { force: true });
+      return;
+    }
+    // There are no awaits between computing this delta and committing its
+    // baseline. Thus it can only refer to permitted snapshots already on disk.
+    const preparedAx = ax ? prepareAuthorizedAxSnapshot(ax, axBaseline) : null;
+    if (ax && !preparedAx?.snapshot && eventType === "accessibility_snapshot") {
+      axBaseline = preparedAx?.baseline ?? null;
+      return;
+    }
+    // Every event is written through here, so this is where accessibility
+    // text is scrubbed: a new event type cannot forget to.
     appendJsonLine(output, {
       recordType: "human_event",
       sequence,
       timestamp: timestamp ?? new Date().toISOString(),
       eventType,
       application,
-      details,
-      ...(ax ? { ax } : {}),
+      details: scrubAccessibility(details),
+      ...(preparedAx?.snapshot ? { ax: preparedAx.snapshot } : {}),
       ...(screenshotPath ? { screenshot: screenshotPath } : {}),
     });
+    if (preparedAx) axBaseline = preparedAx.baseline;
   };
 
   const flushKeys = async () => {
     if (pendingKeyTimer) clearTimeout(pendingKeyTimer);
     pendingKeyTimer = null;
     if (!pendingKeys.length) return;
-    const events = pendingKeys;
+    const events = pendingKeys.filter((event) => canObserve(observationSubject(event)));
     pendingKeys = [];
-    const bundleId = appFrom(events.at(-1)).bundleId;
-    const inputContext = bundleId ? searchInputContextByApp.get(bundleId) : null;
-    const normalized = normalizeKeyBurst(
-      inputContext ? events.map((event) => ({ ...event, inputContext: event.inputContext ?? inputContext })) : events,
-      args,
-    );
-    const ax = events.at(-1)?.ax ?? null;
-    await appendEvent({ ...normalized, timestamp: events[0].timestamp, ax });
+    if (!events.length) return;
+    const normalized = normalizeKeyBurst(events, args);
+    await appendEvent({ ...normalized, timestamp: events[0].timestamp,
+      subjects: events.map(observationSubject) });
   };
+
+  const safely = recordingStep(() => {
+    if (!helper.killed) helper.kill("SIGTERM");
+    process.exit(1);
+  });
 
   const scheduleKeyFlush = () => {
     if (pendingKeyTimer) clearTimeout(pendingKeyTimer);
     pendingKeyTimer = setTimeout(() => {
-      processing = processing.then(flushKeys);
+      processing = processing.then(safely(flushKeys));
     }, TEXT_IDLE_MS);
   };
 
   const ingest = async (event: HelperEvent) => {
     const application = appFrom(event);
-    // Window state travels with the action it belongs to so the summarizer can
-    // read what was on screen without re-deriving it from neighbouring events.
-    const axState = event.ax ? { ax: event.ax } : {};
+    if (event.kind === "session.ended") return;
+    if (args.onlyApps.length && !appAllowed(application, args.onlyApps)) {
+      axBaseline = null;
+      return;
+    }
+    const subjects = [observationSubject(event)];
+    if (!canObserve(subjects[0])) {
+      pendingKeys = pendingKeys.filter((pending) => canObserve(observationSubject(pending)));
+      return;
+    }
+
     if (event.kind === "session.started") {
       await appendEvent({
         eventType: "recording_started",
         timestamp: event.timestamp,
         application,
+        subjects,
         details: { goal: args.title ?? "Human-operated macOS workflow" },
+        ax: event.ax,
       }, true);
       return;
     }
-    if (event.kind === "session.ended") return;
-    if (args.onlyApps.length && !appAllowed(application, args.onlyApps)) return;
-    if (!shouldObserve(observationSettings, {
-      bundleId: application.bundleId,
-      url: typeof event.window?.url === "string" ? event.window.url : null,
-    })) return;
+    // Authorize every full native snapshot before constructing any persisted
+    // delta, independently of input burst merging or normalized action types.
+    if (event.ax) {
+      await appendEvent({
+        eventType: "accessibility_snapshot",
+        timestamp: event.timestamp,
+        application,
+        subjects,
+        ax: event.ax,
+      });
+    }
 
     // The URL now rides on every event's window envelope instead of arriving as
     // its own recorder event, so page context is derived from a change in it.
@@ -545,6 +663,7 @@ export async function run(
         eventType: "page_context",
         timestamp: event.timestamp,
         application,
+        subjects,
         details: {
           url: windowUrl,
           ...(typeof event.window?.title === "string"
@@ -555,10 +674,15 @@ export async function run(
     }
 
     if (event.kind === "keyboard.text_input") {
-      const inputContext = application.bundleId ? searchInputContextByApp.get(application.bundleId) : undefined;
-      if (inputContext) event = { ...event, inputContext };
-      const previousApp = pendingKeys.at(-1) ? appFrom(pendingKeys.at(-1)).bundleId : undefined;
-      if (pendingKeys.length && previousApp !== application.bundleId) await flushKeys();
+      if (isSecureInput(event)) return;
+      const inputContext = searchInputContextFromAccessibility(event.keyboard?.target);
+      event = { ...event, inputContext };
+      const previous = pendingKeys.at(-1);
+      if (previous && (appFrom(previous).bundleId !== application.bundleId
+        || JSON.stringify(previous.inputContext) !== JSON.stringify(inputContext)
+        || JSON.stringify(observationSubject(previous)) !== JSON.stringify(subjects[0]))) {
+        await flushKeys();
+      }
       pendingKeys.push(event);
       scheduleKeyFlush();
       return;
@@ -573,7 +697,7 @@ export async function run(
       if (captureAfterNavigation) {
         await new Promise<void>((resolve) => setTimeout(resolve, NAVIGATION_SETTLE_MS));
       }
-      await appendEvent(normalizeKeyBurst([event], args), captureAfterNavigation);
+      await appendEvent({ ...normalizeKeyBurst([event], args), subjects }, captureAfterNavigation);
       return;
     }
 
@@ -584,29 +708,24 @@ export async function run(
         eventType: "application_changed",
         timestamp: event.timestamp,
         application,
-        ...axState,
+        subjects,
       }, true);
       return;
     }
 
     if (event.kind === "mouse.click" || event.kind === "mouse.context_menu") {
       const target = event.mouse?.target ?? null;
-      if (application.bundleId) {
-        const searchInput = searchInputContextFromAccessibility(target);
-        if (searchInput) searchInputContextByApp.set(application.bundleId, searchInput);
-        else searchInputContextByApp.delete(application.bundleId);
-      }
       await appendEvent({
         eventType: "mouse_click",
         timestamp: event.timestamp,
         application,
+        subjects,
         details: {
           button: event.mouse?.button ?? "left",
           clickCount: event.mouse?.clickCount ?? 1,
           ...(event.kind === "mouse.context_menu" ? { contextMenu: true } : {}),
           ...(target ? { accessibility: target } : {}),
         },
-        ...axState,
       }, true);
       return;
     }
@@ -616,11 +735,11 @@ export async function run(
         eventType: "mouse_drag",
         timestamp: event.timestamp,
         application,
+        subjects,
         details: {
           origin: event.mouse?.origin?.element ?? null,
           destination: event.mouse?.destination?.element ?? null,
         },
-        ...axState,
       }, true);
       return;
     }
@@ -635,6 +754,7 @@ export async function run(
         eventType: "selection_changed",
         timestamp: event.timestamp,
         application,
+        subjects,
         details: {
           characterCount: [...selectedText].length,
           ...(retain
@@ -642,7 +762,6 @@ export async function run(
             : { text: "[REDACTED]", redacted: true }),
           ...(event.selection?.target ? { accessibility: event.selection.target } : {}),
         },
-        ...axState,
       });
     }
   };
@@ -661,10 +780,12 @@ export async function run(
       ]);
       await processing;
       await flushKeys();
+      // Shutdown has no fresh native app/window envelope to authorize a
+      // screenshot; keep its control marker without capturing the desktop.
       await appendEvent({
         eventType: "recording_stopped",
         details: { reason },
-      }, true);
+      });
       console.log(`\nrecording written: ${output}`);
       console.log(`events: ${sequence}`);
     })();
@@ -681,7 +802,7 @@ export async function run(
         stopFromHotkey?.();
         return;
       }
-      processing = processing.then(() => ingest(event));
+      processing = processing.then(safely(() => ingest(event)));
     } catch (error) {
       console.error(`[recorder] ignored malformed helper event: ${(error as Error).message}`);
     }

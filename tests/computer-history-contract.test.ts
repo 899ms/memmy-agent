@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 // it here checks the real contract rather than a hand-maintained list of field
 // names, which drifted twice before anything caught it.
 import { ComputerHistorySnapshotSchema } from "../App/frontend/desktop/src/api/computer-history-contract.js";
-import { ComputerHistoryDemoService } from "../App/memmy-agent/src/tools/computer-history/mac/computer-history-api.js";
+import { ComputerHistoryDemoService, clientSnapshot } from "../App/memmy-agent/src/tools/computer-history/mac/computer-history-api.js";
 
 const roots: string[] = [];
 
@@ -77,5 +77,71 @@ describe("snapshot contract with the desktop client", () => {
 
     // This is the failure the page showed twice; it belongs in a test.
     expect(() => ComputerHistorySnapshotSchema.parse(snapshot)).toThrow();
+  });
+
+  it("accepts the snapshot as it is sent, without summary bodies", () => {
+    const instance = service();
+    const { markdownDirectory } = instance.snapshot().privacy;
+    fs.mkdirSync(markdownDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(markdownDirectory, "2026-09-08T08-20-00Z-10min-summary.md"),
+      '---\ntitle: "A window"\ndescription: "You did a thing."\nsource_type: captured\nsummary_state: ready\n---\n\nbody\n',
+      "utf8",
+    );
+    const sent = clientSnapshot(instance.snapshot());
+    expect(sent.histories[0]).not.toHaveProperty("markdown");
+    expect(() => ComputerHistorySnapshotSchema.parse(sent)).not.toThrow();
+  });
+
+  it("defaults missing coverage to empty and preserves explicit coverage IDs", () => {
+    const sent = clientSnapshot(service().importMarkdown({ title: "Imported history", markdown: "Imported body." }));
+    const legacyEntry = { ...sent.histories[0]! };
+    Reflect.deleteProperty(legacyEntry, "coveredHistoryIds");
+    const legacy = ComputerHistorySnapshotSchema.parse({ ...sent, histories: [legacyEntry] });
+    expect(legacy.histories[0]?.coveredHistoryIds).toEqual([]);
+
+    const current = ComputerHistorySnapshotSchema.parse({
+      ...sent,
+      histories: [{ ...legacyEntry, coveredHistoryIds: ["2026-09-08T08-20-00Z-10min-summary"] }],
+    });
+    expect(current.histories[0]?.coveredHistoryIds).toEqual(["2026-09-08T08-20-00Z-10min-summary"]);
+  });
+
+  it.each([
+    { name: "legacy citations", coverageField: "", expectedCoverage: ["2026-09-11T04-10-00Z-10min-summary"] },
+    { name: "an explicit empty coverage array", coverageField: "covered_history_ids: []\n", expectedCoverage: [] },
+  ])("preserves $name through the real service and body-free desktop contract", ({ coverageField, expectedCoverage }) => {
+    const instance = service();
+    const { markdownDirectory } = instance.snapshot().privacy;
+    fs.mkdirSync(markdownDirectory, { recursive: true });
+    const rollupId = "2026-09-11T04-00-00Z-6h-summary";
+    const citedId = "2026-09-11T04-10-00Z-10min-summary";
+    const uncitedId = "2026-09-11T04-20-00Z-10min-summary";
+    for (const id of [citedId, uncitedId]) {
+      fs.writeFileSync(path.join(markdownDirectory, `${id}.md`), [
+        "---", `title: "${id}"`, 'description: "Recorded activity."',
+        "source_type: captured", "summary_state: ready", "status: completed",
+        "---", "", "## Memory summary", "", "A recorded activity.", "",
+      ].join("\n"), "utf8");
+    }
+    fs.writeFileSync(path.join(markdownDirectory, `${rollupId}.md`), [
+      "---", 'title: "An earlier afternoon"', 'description: "A written six-hour summary."',
+      "source_type: rollup", "summary_state: ready", `${coverageField}---`, "",
+      "## Memory summary", "", "A legacy account of the afternoon.",
+      // A filename in the prose is not evidence that this rollup used it.
+      `The uncited file ${uncitedId}.md is mentioned only as context.`, "",
+      "## Citations", "", `- ${citedId}.md`, "",
+    ].join("\n"), "utf8");
+
+    const stored = instance.snapshot();
+    const sent = clientSnapshot(stored);
+    const parsed = ComputerHistorySnapshotSchema.parse(sent);
+    const rollup = parsed.histories.find((entry) => entry.id === rollupId)!;
+
+    expect(rollup.coveredHistoryIds).toEqual(expectedCoverage);
+    expect(rollup.coveredHistoryIds).not.toContain(uncitedId);
+    expect(parsed.histories.map((entry) => entry.id)).toEqual(expect.arrayContaining([rollupId, citedId, uncitedId]));
+    for (const entry of parsed.histories) expect(entry).not.toHaveProperty("markdown");
+    expect(stored.histories.find((entry) => entry.id === rollupId)?.markdown).toContain(`- ${citedId}.md`);
   });
 });

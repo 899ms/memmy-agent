@@ -71,21 +71,22 @@ const SIX_HOUR_MS = 6 * 60 * 60_000;
  */
 function withoutCoveredSegments(histories: ComputerHistoryEntry[]): ComputerHistoryEntry[] {
   const now = Date.now();
-  const closed: Array<[number, number]> = [];
+  const coveredIds = new Set<string>();
   for (const entry of histories) {
-    if (entry.summaryWindow !== "6h") continue;
+    if (entry.sourceType !== "rollup" || entry.summaryWindow !== "6h") continue;
     const start = new Date(entry.createdAt).getTime();
     if (Number.isNaN(start) || now < start + SIX_HOUR_MS) continue;
-    closed.push([start, start + SIX_HOUR_MS]);
+    for (const id of entry.coveredHistoryIds) coveredIds.add(id);
   }
   return histories.filter((entry) => {
-    if (entry.summaryWindow === "6h") {
+    if (entry.sourceType === "rollup" && entry.summaryWindow === "6h") {
       const start = new Date(entry.createdAt).getTime();
       return Number.isNaN(start) || now >= start + SIX_HOUR_MS;
     }
-    const at = new Date(entry.createdAt).getTime();
-    if (Number.isNaN(at)) return true;
-    return !closed.some(([from, to]) => at >= from && at < to);
+    // Sharing a timestamp does not mean an imported or late-written entry
+    // contributed to this rollup. Only its explicit source IDs can prove that.
+    // Kept recordings must retain their own controls so they can be unpinned.
+    return entry.pinned || entry.sourceType !== "captured" || entry.summaryWindow !== "10min" || !coveredIds.has(entry.id);
   });
 }
 
@@ -149,20 +150,35 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const clearMenuRef = useRef<HTMLDivElement | null>(null);
+  const requestVersion = useRef(0);
+  const appliedVersion = useRef(0);
+  const actionPending = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!props.client) return;
+    if (!props.client || actionPending.current) return;
+    const version = ++requestVersion.current;
     try {
-      setSnapshot(await props.client.getComputerHistory());
-      setError(null);
+      const next = await props.client.getComputerHistory();
+      // A newer request being in flight does not make this response stale.
+      // Reject only responses older than an applied result or a mutation.
+      if (version < appliedVersion.current) return;
+      appliedVersion.current = version;
+      setSnapshot(next);
+      setRefreshError(null);
     } catch (cause) {
-      setError(errorMessage(cause));
+      if (version < appliedVersion.current) return;
+      appliedVersion.current = version;
+      setRefreshError(errorMessage(cause));
     }
   }, [props.client]);
 
   useEffect(() => {
+    actionPending.current = false;
+    setBusy(false);
     void refresh();
+    return () => { appliedVersion.current = ++requestVersion.current; };
   }, [refresh]);
 
   useEffect(() => {
@@ -185,17 +201,36 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const observationState = snapshot?.observation.state ?? "stopped";
   const recording = observationState === "running" || observationState === "stopping";
   const paused = observationState === "paused";
+  const observationError = snapshot?.observation.error;
+  const recordingError = observationError
+    ? t("computerHistory.recordingFailed", { error: observationError })
+    : observationState === "failed" ? t("computerHistory.recordingFailedUnknown") : null;
+  const narrationError = snapshot?.observation.narrationError;
+  // The window the recorder is still writing into, paused or not.
+  const openEntryId = snapshot?.observation.segmentId ? `${snapshot.observation.segmentId}-10min-summary` : null;
 
   const runAction = useCallback(async (operation: (client: MemmyAgentClient) => Promise<ComputerHistorySnapshot>) => {
-    if (!props.client) return;
+    if (!props.client || actionPending.current) return;
+    // Invalidate polls issued before the mutation, and do not start a poll
+    // until its response has supplied the new authoritative snapshot.
+    actionPending.current = true;
+    const version = ++requestVersion.current;
+    appliedVersion.current = version;
     setBusy(true);
     setError(null);
     try {
-      setSnapshot(await operation(props.client));
+      const next = await operation(props.client);
+      if (version !== requestVersion.current) return;
+      setSnapshot(next);
+      setRefreshError(null);
     } catch (cause) {
+      if (version !== requestVersion.current) return;
       setError(errorMessage(cause));
     } finally {
-      setBusy(false);
+      if (version === requestVersion.current) {
+        actionPending.current = false;
+        setBusy(false);
+      }
     }
   }, [props.client]);
 
@@ -209,28 +244,12 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
     setPendingDeleteId(null);
   }, [pendingDeleteId, props.client, runAction]);
 
-  // No batch endpoint exists, so clearing is the individual deletes done for
-  // the user rather than a new destructive route added on their behalf.
+  // The service also knows about pending summaries absent from this snapshot.
   const clearHistories = useCallback(async (scope: "today" | "all") => {
-    const client = props.client;
-    if (!client) return;
-    const today = startOfDay(new Date());
-    const doomed = (snapshot?.histories ?? []).filter((entry) => scope === "all"
-      || startOfDay(new Date(entry.createdAt)) === today);
-    if (!doomed.length) return;
     setClearMenuOpen(false);
-    setBusy(true);
-    setError(null);
-    try {
-      let latest: ComputerHistorySnapshot | null = null;
-      for (const entry of doomed) latest = await client.deleteComputerHistory(entry.id);
-      if (latest) setSnapshot(latest);
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [props.client, snapshot?.histories]);
+    await runAction((client) => client.clearComputerHistories(scope));
+    setPendingDeleteId(null);
+  }, [runAction]);
 
   const toggleDay = useCallback((key: string) => {
     setCollapsedDays((current) => {
@@ -286,7 +305,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
             <button
               type="button"
               className="ch__button"
-              disabled={busy || !snapshot?.histories.length}
+              disabled={busy || !props.client}
               aria-expanded={clearMenuOpen}
               onClick={() => setClearMenuOpen((open) => !open)}
             >
@@ -308,14 +327,15 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
               </div>
             ) : null}
           </div>
-          <button type="button" className="ch__button ch__button--ask" disabled title={t("computerHistory.askSoon")}>
-            <span className="ch__ask-glyph" aria-hidden>◌</span>
-            {t("computerHistory.ask")}
-          </button>
         </div>
       </header>
 
-      {error ? <div className="ch__error">{error}</div> : null}
+      {error ? <div className="ch__error" role="alert">{error}</div> : null}
+      {refreshError ? <div className="ch__error" role="alert">{refreshError}</div> : null}
+      {recordingError ? <div className="ch__error" role="alert">{recordingError}</div> : null}
+      {narrationError ? (
+        <div className="ch__error" role="alert">{t("computerHistory.narrationFailed", { error: narrationError })}</div>
+      ) : null}
 
       <div className="ch__feed">
         {days.length ? days.map((day) => {
@@ -344,6 +364,8 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                       <div className="ch-entry__title-row">
                         <h3>{entry.title}</h3>
                         <div className="ch-entry__row-actions">
+                          {/* A six-hour summary has no raw events of its own to keep. */}
+                          {entry.summaryWindow === "6h" ? null : (
                           <button
                             type="button"
                             className={entry.pinned ? "ch-entry__action ch-entry__action--on" : "ch-entry__action"}
@@ -355,13 +377,16 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                           >
                             {entry.pinned ? "★" : "☆"}
                           </button>
+                          )}
                           <button
                             type="button"
                             className={pendingDeleteId === entry.id
                               ? "ch-entry__action ch-entry__action--confirm"
                               : "ch-entry__action"}
-                            disabled={busy}
-                            title={t(pendingDeleteId === entry.id ? "computerHistory.deleteAgain" : "computerHistory.delete")}
+                            disabled={busy || entry.id === openEntryId}
+                            title={t(entry.id === openEntryId
+                              ? "computerHistory.deleteRecording"
+                              : pendingDeleteId === entry.id ? "computerHistory.deleteAgain" : "computerHistory.delete")}
                             aria-label={t(pendingDeleteId === entry.id ? "computerHistory.confirmDeleteLabel" : "computerHistory.deleteLabel", { title: entry.title })}
                             onClick={() => void deleteHistory(entry.id)}
                           >

@@ -8,6 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { redactSensitive } from "./redaction.js";
+export { redactSensitive } from "./redaction.js";
 
 /** A parsed JSONL line. Its shape is only known through the checks made on it. */
 export type JsonRecord = Record<string, any>;
@@ -222,17 +224,6 @@ function cleanInline(value: unknown, max = EVENT_TEXT_LIMIT): string {
   const clean = redactSensitive(String(value ?? "")).replace(/\s+/g, " ").trim();
   if (clean.length <= max) return clean;
   return `${clean.slice(0, max - 1)}…`;
-}
-
-export function redactSensitive(value: unknown): string {
-  return String(value ?? "")
-    .replace(/data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi, "[image base64 omitted]")
-    .replace(/\bBearer\s+[a-z0-9._~+/-]{12,}/gi, "Bearer [REDACTED]")
-    .replace(/\bsk-[a-z0-9_-]{12,}\b/gi, "[REDACTED]")
-    .replace(
-      /((?:api[ _-]?key|access[ _-]?token|auth[ _-]?token|password|secret)\s*[:=]\s*)["']?[^\s,"']+["']?/gi,
-      "$1[REDACTED]",
-    );
 }
 
 function yamlString(value: unknown): string {

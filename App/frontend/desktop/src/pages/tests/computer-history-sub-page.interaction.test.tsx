@@ -35,22 +35,26 @@ describe("ComputerHistorySubPage", () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.replaceChildren();
+    vi.useRealTimers();
   });
 
-  const renderWith = async (initial: ComputerHistorySnapshot) => {
+  const renderWith = async (initial: ComputerHistorySnapshot, overrides: Partial<MemmyAgentClient> = {}) => {
     const client = {
       getComputerHistory: vi.fn().mockResolvedValue(initial),
       deleteComputerHistory: vi.fn().mockResolvedValue(initial),
+      clearComputerHistories: vi.fn().mockResolvedValue(initial),
       startComputerHistoryObservation: vi.fn().mockResolvedValue(initial),
       pauseComputerHistoryObservation: vi.fn().mockResolvedValue(initial),
       resumeComputerHistoryObservation: vi.fn().mockResolvedValue(initial),
       stopComputerHistoryObservation: vi.fn().mockResolvedValue(initial),
       pinComputerHistory: vi.fn().mockResolvedValue(initial),
       getApplicationIcon: vi.fn().mockResolvedValue(null),
+      ...overrides,
     } as unknown as MemmyAgentClient;
     await act(async () => {
       root.render(page(client));
     });
+    return client;
   };
 
   it("keeps recording and read-only artifacts on the page, and requires two clicks to delete", async () => {
@@ -112,6 +116,8 @@ describe("ComputerHistorySubPage", () => {
   it("keeps a current window at ten-minute resolution", async () => {
     const base = {
       applications: [] as string[],
+      coveredHistoryIds: [] as string[],
+      eventStreamPath: null,
       pinned: false,
       sourceType: "captured" as const,
       markdown: "## Memory summary\n\nbody",
@@ -123,7 +129,7 @@ describe("ComputerHistorySubPage", () => {
     const segment = new Date(Date.now() - 30 * 60_000);
     await renderWith(snapshot({
       histories: [
-        { ...base, id: "rollup", title: "A whole window", description: "Overview.", summaryWindow: "6h" as const, createdAt: openWindow.toISOString() },
+        { ...base, id: "rollup", title: "A whole window", description: "Overview.", sourceType: "rollup", summaryWindow: "6h" as const, coveredHistoryIds: ["moment"], createdAt: openWindow.toISOString() },
         { ...base, id: "moment", title: "One moment", description: "Detail.", summaryWindow: "10min" as const, createdAt: segment.toISOString() },
       ],
     }));
@@ -136,6 +142,8 @@ describe("ComputerHistorySubPage", () => {
   it("names each part of the day once", async () => {
     const base = {
       applications: [] as string[],
+      coveredHistoryIds: [] as string[],
+      eventStreamPath: null,
       pinned: false,
       sourceType: "captured" as const,
       markdown: "## Memory summary\n\nbody",
@@ -159,9 +167,41 @@ describe("ComputerHistorySubPage", () => {
     expect(labels).toEqual(["晚上", "下午", "上午", "凌晨"]);
   });
 
+  it("offers no keep on a six-hour summary, and no delete on the window being recorded", async () => {
+    const base = {
+      applications: [] as string[],
+      coveredHistoryIds: [] as string[],
+      eventStreamPath: null,
+      pinned: false,
+      sourceType: "captured" as const,
+      markdown: "## Memory summary\n\nbody",
+      filePath: "/tmp/x.md",
+    };
+    const past = new Date(Date.now() - 2 * 86_400_000);
+    past.setHours(6, 0, 0, 0);
+    const now = new Date();
+    const segmentId = "2026-09-11T02-10-00Z";
+    await renderWith(snapshot({
+      observation: { state: "running", startedAt: now.toISOString(), segmentId, segmentStartedAt: now.toISOString(), error: null, narrationError: null },
+      histories: [
+        { ...base, id: `${segmentId}-10min-summary`, title: "Being recorded", description: "d", summaryWindow: "10min" as const, createdAt: now.toISOString() },
+        { ...base, id: "rollup", title: "A morning", description: "d", summaryWindow: "6h" as const, createdAt: past.toISOString() },
+      ],
+    }));
+
+    // A rollup owns no raw events: keeping it used to keep someone else's.
+    expect(container.querySelector('[aria-label="保留 A morning"]')).toBeNull();
+    expect(container.querySelector('[aria-label="保留 Being recorded"]')).not.toBeNull();
+    // Deleting the open window removed the directory the recorder writes to.
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="删除 Being recorded"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="删除 A morning"]')?.disabled).toBe(false);
+  });
+
   it("lets a closed rollup stand in for the segments it covers", async () => {
     const base = {
       applications: [] as string[],
+      coveredHistoryIds: [] as string[],
+      eventStreamPath: null,
       pinned: false,
       sourceType: "captured" as const,
       markdown: "## Memory summary\n\nbody",
@@ -173,7 +213,7 @@ describe("ComputerHistorySubPage", () => {
     const outside = new Date(windowStart.getTime() + 7 * 60 * 60_000);
     await renderWith(snapshot({
       histories: [
-        { ...base, id: "rollup", title: "That whole window", description: "Overview.", summaryWindow: "6h" as const, createdAt: windowStart.toISOString() },
+        { ...base, id: "rollup", title: "That whole window", description: "Overview.", sourceType: "rollup", summaryWindow: "6h" as const, coveredHistoryIds: ["covered"], createdAt: windowStart.toISOString() },
         { ...base, id: "covered", title: "A covered minute", description: "Detail.", summaryWindow: "10min" as const, createdAt: covered.toISOString() },
         { ...base, id: "outside", title: "An uncovered minute", description: "Detail.", summaryWindow: "10min" as const, createdAt: outside.toISOString() },
       ],
@@ -186,19 +226,255 @@ describe("ComputerHistorySubPage", () => {
     // A segment the rollup does not reach is not the rollup's to hide.
     expect(container.textContent).toContain("An uncovered minute");
   });
+
+  it("keeps imports and late summaries that did not contribute to a closed rollup", async () => {
+    const at = new Date(Date.now() - 2 * 86_400_000);
+    const base = snapshot().histories[0]!;
+    await renderWith(snapshot({ histories: [
+      { ...base, id: "rollup", title: "Closed rollup", sourceType: "rollup", summaryWindow: "6h", createdAt: at.toISOString(), coveredHistoryIds: ["covered", "imported-ten-minute"] },
+      ...[
+        { id: "covered", title: "Included segment", sourceType: "captured" as const, summaryWindow: "10min" as const },
+        { id: "late", title: "Late segment", sourceType: "captured" as const, summaryWindow: "10min" as const },
+        { id: "imported", title: "Imported history", sourceType: "imported" as const, summaryWindow: null },
+        { id: "fixture", title: "Demo history", sourceType: "demo_fixture" as const, summaryWindow: null },
+        { id: "imported-ten-minute", title: "Imported segment", sourceType: "imported" as const, summaryWindow: "10min" as const },
+      ].map((entry) => ({ ...base, ...entry, createdAt: new Date(at.getTime() + 60 * 60_000).toISOString() })),
+      { ...base, id: "imported-six-hour", title: "Imported six-hour history", sourceType: "imported", summaryWindow: "6h", createdAt: new Date().toISOString() },
+    ] }));
+
+    expect(container.textContent).not.toContain("Included segment");
+    for (const title of ["Late segment", "Imported history", "Demo history", "Imported segment", "Imported six-hour history"]) {
+      expect(container.textContent).toContain(title);
+    }
+  });
+
+  it("keeps segments alongside an old rollup without coverage metadata", async () => {
+    const at = new Date(Date.now() - 2 * 86_400_000);
+    const base = snapshot().histories[0]!;
+    await renderWith(snapshot({ histories: [
+      { ...base, id: "rollup", title: "Legacy rollup", sourceType: "rollup", summaryWindow: "6h", createdAt: at.toISOString(), coveredHistoryIds: [] },
+      { ...base, title: "Segment remains", createdAt: new Date(at.getTime() + 60 * 60_000).toISOString() },
+    ] }));
+    expect(container.textContent).toContain("Legacy rollup");
+    expect(container.textContent).toContain("Segment remains");
+  });
+
+  it("keeps a pinned covered segment visible until the user cancels its pin", async () => {
+    const at = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const base = snapshot().histories[0]!;
+    const rollup = { ...base, id: "rollup", title: "Closed rollup", sourceType: "rollup" as const, summaryWindow: "6h" as const, createdAt: at, coveredHistoryIds: [base.id] };
+    const child = { ...base, pinned: true, createdAt: at };
+    const unpinned = snapshot({ histories: [rollup, { ...child, pinned: false }] });
+    const pinComputerHistory = vi.fn().mockResolvedValue(unpinned);
+    await renderWith(snapshot({ histories: [rollup, child] }), { pinComputerHistory });
+
+    expect(container.textContent).toContain("Closed rollup");
+    const unpin = container.querySelector<HTMLButtonElement>('[aria-label="取消保留 My recording"]');
+    expect(unpin).not.toBeNull();
+    await act(async () => { unpin?.click(); });
+
+    expect(pinComputerHistory).toHaveBeenCalledWith(base.id, false);
+    expect(container.textContent).not.toContain("My recording");
+    expect(container.textContent).toContain("Closed rollup");
+  });
+
+  it("rejects a poll issued before a successful clear even when it returns afterwards", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot();
+    const oldPoll = deferred<ComputerHistorySnapshot>();
+    const getComputerHistory = vi.fn().mockResolvedValueOnce(initial).mockReturnValueOnce(oldPoll.promise);
+    const clearComputerHistories = vi.fn().mockResolvedValue(snapshot({ histories: [], workflows: [] }));
+    await renderWith(initial, { getComputerHistory, clearComputerHistories });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+    act(() => {
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("清除历史"))?.click();
+    });
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === "清除全部")?.click();
+    });
+    expect(container.textContent).not.toContain("My recording");
+
+    await act(async () => { oldPoll.resolve(initial); });
+    expect(clearComputerHistories).toHaveBeenCalledWith("all");
+    expect(container.textContent).not.toContain("My recording");
+  });
+
+  it("rejects older polls after a newer snapshot and ignores their errors", async () => {
+    vi.useFakeTimers();
+    const first = deferred<ComputerHistorySnapshot>();
+    const second = deferred<ComputerHistorySnapshot>();
+    const third = deferred<ComputerHistorySnapshot>();
+    const initial = snapshot();
+    const getComputerHistory = vi.fn().mockResolvedValueOnce(initial)
+      .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockReturnValueOnce(third.promise);
+    await renderWith(initial, { getComputerHistory });
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    await act(async () => { third.resolve(snapshot({ histories: [], workflows: [] })); });
+    await act(async () => { second.resolve(initial); first.reject(new Error("outdated poll failure")); });
+
+    expect(container.textContent).not.toContain("My recording");
+    expect(container.textContent).not.toContain("outdated poll failure");
+  });
+
+  it("applies successful polling responses even when each takes longer than the interval", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot({ observation: { ...snapshot().observation, state: "running" } });
+    let sequence = 0;
+    const getComputerHistory = vi.fn().mockResolvedValueOnce(initial).mockImplementation(() => {
+      const title = `Slow result ${++sequence}`;
+      return new Promise<ComputerHistorySnapshot>((resolve) => {
+        setTimeout(() => resolve({ ...initial, histories: [{ ...initial.histories[0]!, title }] }), 2000);
+      });
+    });
+    await renderWith(initial, { getComputerHistory });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(6500); });
+
+    // At 6500ms three polls have completed and a fourth is still in flight.
+    // The pending fourth request must not prevent the first three rendering.
+    expect(getComputerHistory).toHaveBeenCalledTimes(5);
+    expect(container.textContent).toContain("Slow result 3");
+  });
+
+  it("shows the initial snapshot even when another poll starts before it arrives", async () => {
+    vi.useFakeTimers();
+    const initial = deferred<ComputerHistorySnapshot>();
+    const later = deferred<ComputerHistorySnapshot>();
+    const getComputerHistory = vi.fn().mockReturnValueOnce(initial.promise).mockReturnValueOnce(later.promise);
+    await renderWith(snapshot(), { getComputerHistory });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => { initial.resolve(snapshot()); });
+
+    expect(getComputerHistory).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("My recording");
+  });
+
+  it("does not clear a newer polling failure with an older successful response", async () => {
+    vi.useFakeTimers();
+    const older = deferred<ComputerHistorySnapshot>();
+    const newer = deferred<ComputerHistorySnapshot>();
+    const initial = snapshot({ histories: [] });
+    const getComputerHistory = vi.fn().mockResolvedValueOnce(initial)
+      .mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    await renderWith(initial, { getComputerHistory });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    await act(async () => { newer.reject(new Error("current polling failure")); });
+    await act(async () => { older.resolve(snapshot()); });
+
+    expect(container.textContent).toContain("current polling failure");
+    expect(container.textContent).not.toContain("My recording");
+  });
+
+  it("invalidates pending responses across client changes and unmounts", async () => {
+    vi.useFakeTimers();
+    const firstPoll = deferred<ComputerHistorySnapshot>();
+    const firstAction = deferred<ComputerHistorySnapshot>();
+    const first = await renderWith(snapshot(), {
+      getComputerHistory: vi.fn().mockResolvedValueOnce(snapshot()).mockReturnValueOnce(firstPoll.promise),
+      pinComputerHistory: vi.fn().mockReturnValueOnce(firstAction.promise),
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    act(() => { container.querySelector<HTMLButtonElement>('[aria-label="保留 My recording"]')?.click(); });
+
+    const current = snapshot({ histories: [], workflows: [] });
+    const next = await renderWith(current);
+    await act(async () => { firstAction.resolve(snapshot()); firstPoll.reject(new Error("old client failure")); });
+    expect(first.pinComputerHistory).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("My recording");
+    expect(container.textContent).not.toContain("old client failure");
+
+    const unmountedPoll = deferred<ComputerHistorySnapshot>();
+    vi.mocked(next.getComputerHistory).mockReturnValueOnce(unmountedPoll.promise);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => { root.render(null); });
+    await act(async () => { unmountedPoll.resolve(snapshot()); });
+    await renderWith(current);
+    expect(container.textContent).not.toContain("My recording");
+  });
+
+  it("waits for a pending stop before polling its resulting state", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot({ observation: { ...snapshot().observation, state: "running" } });
+    const stop = deferred<ComputerHistorySnapshot>();
+    const getComputerHistory = vi.fn().mockResolvedValue(initial);
+    await renderWith(initial, { getComputerHistory, stopComputerHistoryObservation: vi.fn().mockReturnValue(stop.promise) });
+
+    act(() => { container.querySelector<HTMLButtonElement>(".ch__button--recording")?.click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500); });
+    expect(getComputerHistory).toHaveBeenCalledTimes(1);
+    await act(async () => { stop.resolve(snapshot()); });
+    expect(container.textContent).toContain("开始记录");
+    getComputerHistory.mockResolvedValue(snapshot());
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(getComputerHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows asynchronous recording and narration failures until the backend recovers", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot({ observation: { ...snapshot().observation, state: "failed", error: "recorder exited", narrationError: "model unavailable" } });
+    const getComputerHistory = vi.fn().mockResolvedValue(initial);
+    await renderWith(initial, { getComputerHistory });
+    expect(container.textContent).toContain("记录失败：recorder exited");
+    expect(container.textContent).toContain("摘要生成失败：model unavailable");
+
+    getComputerHistory.mockResolvedValue(snapshot());
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(container.textContent).not.toContain("recorder exited");
+    expect(container.textContent).not.toContain("model unavailable");
+  });
+
+  it("does not erase an action failure when the next snapshot refresh succeeds", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot();
+    const client = await renderWith(initial, { pinComputerHistory: vi.fn().mockRejectedValue(new Error("cannot keep raw events")) });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="保留 My recording"]')?.click(); });
+    expect(container.textContent).toContain("cannot keep raw events");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(client.getComputerHistory).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("cannot keep raw events");
+
+    vi.mocked(client.pinComputerHistory).mockResolvedValue(initial);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="保留 My recording"]')?.click(); });
+    expect(container.textContent).not.toContain("cannot keep raw events");
+  });
+
+  it.each([ ["today", "清除今天"], ["all", "清除全部"] ] as const)("clears %s through the service even when pending summaries are absent from the feed", async (scope, label) => {
+    const client = await renderWith(snapshot({ histories: [], workflows: [] }));
+    const clear = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("清除历史"));
+    expect(clear?.disabled).toBe(false);
+    act(() => clear?.click());
+    await act(async () => {
+      [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === label)?.click();
+    });
+    expect(client.clearComputerHistories).toHaveBeenCalledWith(scope);
+    expect(client.deleteComputerHistory).not.toHaveBeenCalled();
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function snapshot(overrides: Partial<ComputerHistorySnapshot> = {}): ComputerHistorySnapshot {
   return {
     observation: { state: "stopped", startedAt: null, segmentId: null, segmentStartedAt: null, error: null, narrationError: null },
-    cuaRun: { kind: null, status: "idle", startedAt: null, finishedAt: null, output: "", error: null },
     histories: [{
       id: "history-1",
       title: "My recording",
       description: "You opened Notes and drafted a short entry.",
       applications: ["com.apple.Notes"],
       summaryWindow: "10min",
+      coveredHistoryIds: [],
       pinned: false,
+      eventStreamPath: null,
       sourceType: "captured",
       createdAt: "2026-09-01T05:00:00.000Z",
       markdown: '---\ncapture_policy: accessibility_events\ntitle: "My recording"\n---\n\n## Memory summary\n\nRecorded steps.',
@@ -217,6 +493,7 @@ function snapshot(overrides: Partial<ComputerHistorySnapshot> = {}): ComputerHis
       audio: false,
       rawRetentionHours: 48,
       markdownDirectory: "/tmp/histories",
+      eventStreamDirectory: "/tmp/recordings/segments",
     },
     ...overrides,
   };
