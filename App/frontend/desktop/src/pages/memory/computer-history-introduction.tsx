@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronRight, History, Mic, Plus, Send, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -187,9 +187,6 @@ function HistoryExamples() {
           <div aria-hidden="true">
             <p>{t("home.input")}</p>
             <div className="chi-demo__toolbar">
-              <span className="chi-demo__model">{t("home.modelSelector.platformAgent")}<ChevronDown size={12} /></span>
-              <span className="chi-demo__tool"><Plus size={15} /></span>
-              <span className="chi-demo__tool"><Mic size={15} /></span>
               <span className="chi-demo__send"><Send size={13} /></span>
             </div>
           </div>
