@@ -12010,6 +12010,9 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch-entry__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 6px;
   border: 0;
   border-radius: 6px;
