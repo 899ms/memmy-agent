@@ -9,6 +9,7 @@ import type {
 import { useTranslation } from "../../i18n/use-translation.js";
 import { MemoryMarkdown } from "./memory-markdown.js";
 import { AppIcon } from "./app-icon.js";
+import { ComputerHistoryIntroduction, markComputerHistoryIntroduced, shouldIntroduceComputerHistory } from "./computer-history-introduction.js";
 
 export interface ComputerHistorySubPageProps {
   client: MemmyAgentClient | null;
@@ -145,6 +146,7 @@ function Prose(props: { text: string }) {
 export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<ComputerHistorySnapshot | null>(null);
+  const [introductionOpen, setIntroductionOpen] = useState(shouldIntroduceComputerHistory);
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
@@ -157,7 +159,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const actionPending = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!props.client || actionPending.current) return;
+    if (!props.client || actionPending.current || introductionOpen) return;
     const version = ++requestVersion.current;
     try {
       const next = await props.client.getComputerHistory();
@@ -172,7 +174,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       appliedVersion.current = version;
       setRefreshError(errorMessage(cause));
     }
-  }, [props.client]);
+  }, [props.client, introductionOpen]);
 
   useEffect(() => {
     actionPending.current = false;
@@ -265,13 +267,18 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       <header className="ch__head">
         <h1>
           Computer History
-          <span
-            className="ch__info"
+          <button type="button"
+            className="ch__info ch__info--button"
             title={t("computerHistory.info")}
-            aria-hidden
+            aria-label={t("historyIntro.open")}
+            disabled={busy || !props.client}
+            onClick={() => {
+              appliedVersion.current = ++requestVersion.current;
+              setIntroductionOpen(true);
+            }}
           >
             i
-          </span>
+          </button>
         </h1>
         <div className="ch__head-actions">
           {/* Codex records all day and so has no switch. Memmy only records
@@ -420,6 +427,18 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       </div>
 
       <WorkflowSection snapshot={snapshot} />
+      {introductionOpen && props.client ? <ComputerHistoryIntroduction
+        client={props.client}
+        onClose={() => { markComputerHistoryIntroduced(); setIntroductionOpen(false); }}
+        onApplied={(next) => {
+          appliedVersion.current = ++requestVersion.current;
+          setSnapshot(next);
+          setRefreshError(null);
+          setError(null);
+          markComputerHistoryIntroduced();
+          setIntroductionOpen(false);
+        }}
+      /> : null}
     </section>
   );
 }
