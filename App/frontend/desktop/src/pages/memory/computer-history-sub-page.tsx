@@ -13,7 +13,6 @@ import { useTranslation } from "../../i18n/use-translation.js";
 import { MemoryMarkdown } from "./memory-markdown.js";
 import { AppIcon } from "./app-icon.js";
 import { ScrollText, Trash2 } from "./memory-prototype-icons.js";
-import { ComputerHistoryIntroduction, markComputerHistoryIntroduced, shouldIntroduceComputerHistory } from "./computer-history-introduction.js";
 import { ComputerHistoryRecordingConfirmation } from "./computer-history-recording-confirmation.js";
 
 export interface ComputerHistorySubPageProps {
@@ -159,7 +158,6 @@ function Prose(props: { text: string }) {
 export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<ComputerHistorySnapshot | null>(null);
-  const [introductionOpen, setIntroductionOpen] = useState(shouldIntroduceComputerHistory);
   const [pendingRecordingAction, setPendingRecordingAction] = useState<"start" | "resume" | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -173,7 +171,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const actionPending = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!props.client || actionPending.current || introductionOpen) return;
+    if (!props.client || actionPending.current) return;
     const version = ++requestVersion.current;
     try {
       const next = await props.client.getComputerHistory();
@@ -188,7 +186,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       appliedVersion.current = version;
       setRefreshError(errorMessage(cause));
     }
-  }, [props.client, introductionOpen]);
+  }, [props.client]);
 
   useEffect(() => {
     actionPending.current = false;
@@ -304,7 +302,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
 
       <div className="ch__recording-setting flex items-center justify-between bg-background-paper rounded-card-lg border-content-panel">
         <div className="flex-1 pr-4">
-          <div id="computer-history-record-label" className="text-sm text-text-ink/70">{t("historyIntro.record")}</div>
+          <div id="computer-history-record-label" className="text-sm text-text-ink/70">{t("computerHistory.record")}</div>
           <div id="computer-history-record-description" className="mt-1 text-xs text-text-ink/50 leading-relaxed">{t("computerHistory.recordDescription")}</div>
         </div>
         <div className="ch__head-actions">
@@ -346,18 +344,15 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       <div className="ch__head">
         <h4 className="ch__history-title text-sm font-semibold text-text-ink">
           {t("computerHistory.history")}
-          <button type="button"
-            className="ch__info ch__info--button"
+          <span
+            className="ch__info"
             title={t("computerHistory.info")}
-            aria-label={t("historyIntro.open")}
-            disabled={busy || !props.client}
-            onClick={() => {
-              appliedVersion.current = ++requestVersion.current;
-              setIntroductionOpen(true);
-            }}
+            role="img"
+            aria-label={t("computerHistory.info")}
+            tabIndex={0}
           >
             i
-          </button>
+          </span>
         </h4>
         <div className="ch__menu" ref={clearMenuRef}>
           <Button
@@ -508,18 +503,6 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
             : client.startComputerHistoryObservation());
         }}
       />
-      {introductionOpen && props.client ? <ComputerHistoryIntroduction
-        client={props.client}
-        onClose={() => { markComputerHistoryIntroduced(); setIntroductionOpen(false); }}
-        onApplied={(next) => {
-          appliedVersion.current = ++requestVersion.current;
-          setSnapshot(next);
-          setRefreshError(null);
-          setError(null);
-          markComputerHistoryIntroduced();
-          setIntroductionOpen(false);
-        }}
-      /> : null}
     </section>
   );
 }

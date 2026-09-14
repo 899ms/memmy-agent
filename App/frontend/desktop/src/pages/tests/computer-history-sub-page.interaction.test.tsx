@@ -27,7 +27,7 @@ describe("ComputerHistorySubPage", () => {
   let root: Root;
 
   beforeEach(() => {
-    window.localStorage.setItem("memmy.computerHistoryIntroduction.v2", "seen");
+    window.localStorage.clear();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -58,6 +58,16 @@ describe("ComputerHistorySubPage", () => {
     });
     return client;
   };
+
+  it("opens history directly without an introduction or automatic recording on a fresh installation", async () => {
+    const client = await renderWith(snapshot());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(container.querySelector('.ch__info')?.getAttribute("title")).toContain("只在开启时记录");
+    expect(container.querySelector('button.ch__info')).toBeNull();
+    expect(client.getComputerHistory).toHaveBeenCalledOnce();
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+  });
 
   it("keeps recording and read-only artifacts on the page, and requires two clicks to delete", async () => {
     const initial = snapshot();
