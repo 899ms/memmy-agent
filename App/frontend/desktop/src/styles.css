@@ -10516,6 +10516,23 @@ input[type="checkbox"].check-sky:checked::after {
   display: none;
 }
 
+.app-tooltip--description {
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-color: var(--border-content-panel);
+  border-radius: 10px;
+  background: var(--color-background-paper);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--color-text-ink) 8%, transparent);
+  color: color-mix(in srgb, var(--color-text-ink) 78%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.app-tooltip--description::after {
+  background: var(--color-background-paper);
+  border-color: var(--border-content-panel);
+}
+
 .app-tooltip--top {
   animation: app-tooltip-in-top var(--duration-fast) ease-out;
   transform: translate(-50%, -100%);
@@ -11758,14 +11775,19 @@ input[type="checkbox"].check-sky:checked::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--ch-rail);
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
   color: var(--ch-muted);
-  font-size: 10px;
-  font-style: italic;
-  cursor: help;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ch__info:hover {
+  color: var(--color-text-ink);
+  background: var(--color-surface-muted);
 }
 
 .ch__head-actions {

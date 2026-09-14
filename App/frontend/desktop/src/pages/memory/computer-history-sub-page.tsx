@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import { Button } from "../../components/button.js";
+import { Tooltip } from "../../components/tooltip.js";
 import type {
   ComputerHistoryEntry,
   ComputerHistorySnapshot,
@@ -324,15 +325,9 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       <div className="ch__head">
         <h4 className="ch__history-title text-sm font-semibold text-text-ink">
           {t("computerHistory.history")}
-          <span
-            className="ch__info"
-            title={t("computerHistory.info")}
-            role="img"
-            aria-label={t("computerHistory.info")}
-            tabIndex={0}
-          >
-            i
-          </span>
+          <Tooltip content={t("computerHistory.info")} openOnClick variant="description">
+            <button type="button" className="ch__info" aria-label={t("memory.learnMore")}><Info size={16} strokeWidth={1.7} aria-hidden="true" /></button>
+          </Tooltip>
         </h4>
         <div className="ch__menu" ref={clearMenuRef}>
           <Button
