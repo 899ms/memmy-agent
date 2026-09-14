@@ -106,6 +106,7 @@ import type { ChannelAdminApi } from "../../entrypoints/frontend-bridge/channels
 import {
   ComputerHistoryApiError,
   getComputerHistoryDemoService,
+  clientSnapshot,
 } from "../../tools/computer-history/mac/computer-history-api.js";
 import type { ComputerHistoryDemoService } from "../../tools/computer-history/mac/computer-history-api.js";
 import {
@@ -2731,6 +2732,7 @@ export class WebSocketChannel extends BaseChannel {
     if (got === "/api/commands") return this.handleCommands(request);
     if (got === "/api/computer-history") return this.handleComputerHistory(request, "snapshot");
     if (got === "/api/computer-history/delete") return this.handleComputerHistory(request, "history-delete");
+    if (got === "/api/computer-history/clear") return this.handleComputerHistory(request, "history-clear");
     if (got === "/api/computer-history/pin") return this.handleComputerHistory(request, "history-pin");
     if (got === "/api/computer-history/import") return this.handleComputerHistory(request, "import");
     if (got === "/api/computer-history/observation/start") return this.handleComputerHistory(request, "observation-start");
@@ -2738,7 +2740,6 @@ export class WebSocketChannel extends BaseChannel {
     if (got === "/api/computer-history/observation/resume") return this.handleComputerHistory(request, "observation-resume");
     if (got === "/api/computer-history/observation/stop") return this.handleComputerHistory(request, "observation-stop");
     if (got === "/api/computer-history/workflows/create") return this.handleComputerHistory(request, "workflow-create");
-    if (got === "/api/computer-history/cua/start") return this.handleComputerHistory(request, "cua-start");
     if (got === "/api/computer-history/app-icon") return this.handleComputerHistoryAppIcon(request);
     if (got === "/api/webui/sidebar-state") return this.handleWebuiSidebarState(request);
     if (got === "/api/webui/sidebar-state/update") return this.handleWebuiSidebarStateUpdate(request);
@@ -2899,13 +2900,13 @@ export class WebSocketChannel extends BaseChannel {
 
   async handleComputerHistory(
     request: any,
-    action: "snapshot" | "history-delete" | "history-pin" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create" | "cua-start",
+    action: "snapshot" | "history-delete" | "history-clear" | "history-pin" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create",
   ): Promise<HttpLikeResponse> {
     if (!this.checkApiToken(request)) return httpError(401, "Unauthorized");
     const method = (request.method ?? "GET").toUpperCase();
     if (action === "snapshot") {
       return method === "GET"
-        ? httpJsonResponse(this.computerHistory.snapshot() as unknown as Record<string, any>)
+        ? httpJsonResponse(clientSnapshot(this.computerHistory.snapshot()) as unknown as Record<string, any>)
         : httpError(405, "method not allowed");
     }
     if (method !== "POST") return httpError(405, "method not allowed");
@@ -2928,6 +2929,12 @@ export class WebSocketChannel extends BaseChannel {
       switch (action) {
         case "history-delete":
           snapshot = this.computerHistory.deleteHistory(String(body.history_id ?? ""));
+          break;
+        case "history-clear":
+          if (body.scope !== "today" && body.scope !== "all") {
+            throw new ComputerHistoryApiError(400, "scope must be today or all");
+          }
+          snapshot = this.computerHistory.clearHistories(body.scope);
           break;
         case "history-pin":
           snapshot = this.computerHistory.pinSegment(
@@ -2959,14 +2966,8 @@ export class WebSocketChannel extends BaseChannel {
             typeof body.user_request === "string" ? body.user_request : "",
           );
           break;
-        case "cua-start":
-          snapshot = this.computerHistory.startCuaRun(
-            String(body.workflow_id ?? ""),
-            Array.isArray(body.variables) ? body.variables.filter((value: unknown) => typeof value === "string") : [],
-          );
-          break;
       }
-      return httpJsonResponse(snapshot as unknown as Record<string, any>);
+      return httpJsonResponse(clientSnapshot(snapshot!) as unknown as Record<string, any>);
     } catch (error) {
       if (error instanceof ComputerHistoryApiError) return httpError(error.status, error.message);
       return httpError(500, error instanceof Error ? error.message : String(error));

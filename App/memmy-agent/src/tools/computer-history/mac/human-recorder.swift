@@ -40,11 +40,31 @@ func modifierNames(_ flags: CGEventFlags) -> [String] {
   return names
 }
 
-let keyNames: [CGKeyCode: String] = [
+let keyNames: [Int: String] = [
   36: "return", 48: "tab", 49: "space", 51: "backspace", 53: "escape",
   115: "home", 116: "pageup", 117: "forwarddelete", 119: "end",
   121: "pagedown", 123: "left", 124: "right", 125: "down", 126: "up",
 ]
+
+// Shift/Option change printable text; only Command/Control turn a printable
+// character into a shortcut. Check secure input before carrying any text.
+func classifiedKeyboard(keyCode: Int, text: String, modifiers: [String], secure: Bool) -> [String: Any]? {
+  var keyboard: [String: Any] = [:]
+  if !modifiers.isEmpty { keyboard["modifiers"] = modifiers }
+  if keyCode == 36 && modifiers.isEmpty {
+    return ["kind": "keyboard.submit", "keyboard": keyboard]
+  }
+  let command = modifiers.contains("cmd") || modifiers.contains("control")
+  let named = keyNames[keyCode]
+  if command || (named != nil && keyCode != 49) {
+    keyboard["keyEquivalent"] = named ?? (text.isEmpty ? "keycode-\(keyCode)" : text)
+    keyboard["keyCode"] = keyCode
+    return ["kind": "keyboard.shortcut", "keyboard": keyboard]
+  }
+  guard !secure, !text.isEmpty else { return nil }
+  keyboard["text"] = text
+  return ["kind": "keyboard.text_input", "keyboard": keyboard]
+}
 
 func characters(from event: CGEvent) -> String {
   var length = 0
@@ -209,7 +229,12 @@ func focusedInteractiveNode(pid: pid_t) -> [String: Any]? {
 
 // MARK: - Browser page context
 
-let browserBundleIds: Set<String> = ["com.google.Chrome", "com.apple.Safari"]
+let browserBundleIds: Set<String> = [
+  "com.google.Chrome", "com.google.Chrome.canary", "com.apple.Safari",
+  "com.apple.SafariTechnologyPreview", "company.thebrowser.Browser",
+  "com.microsoft.edgemac", "com.brave.Browser", "org.mozilla.firefox",
+  "org.chromium.Chromium", "com.operasoftware.Opera", "com.vivaldi.Vivaldi",
+]
 
 func sanitizedPageUrl(_ raw: String) -> String? {
   guard var components = URLComponents(string: raw) else { return nil }
@@ -236,14 +261,8 @@ func webAreaUrl(_ element: AXUIElement) -> String? {
   return nil
 }
 
-func browserPage(pid: pid_t) -> (url: String?, title: String?) {
-  let app = AXUIElementCreateApplication(pid)
-  AXUIElementSetMessagingTimeout(app, 0.3)
-  var windowRef: CFTypeRef?
-  if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowRef) != .success {
-    _ = AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &windowRef)
-  }
-  guard let window = axElement(windowRef) else { return (nil, nil) }
+func browserPage(window: AXUIElement) -> (url: String?, title: String?) {
+  AXUIElementSetMessagingTimeout(window, 0.1)
   let title = accessibilityString(window, kAXTitleAttribute as CFString)
   if let document = accessibilityString(window, "AXDocument" as CFString),
      let sanitized = sanitizedPageUrl(document) {
@@ -251,9 +270,11 @@ func browserPage(pid: pid_t) -> (url: String?, title: String?) {
   }
   var queue: [AXUIElement] = [window]
   var visited = 0
-  while !queue.isEmpty && visited < 120 {
+  let deadline = Date().addingTimeInterval(0.15)
+  while !queue.isEmpty && visited < 120 && Date() < deadline {
     let current = queue.removeFirst()
     visited += 1
+    AXUIElementSetMessagingTimeout(current, 0.05)
     if accessibilityString(current, kAXRoleAttribute as CFString) == "AXWebArea" {
       return (webAreaUrl(current), title)
     }
@@ -290,30 +311,80 @@ func nextEventId() -> String {
 
 // MARK: - Live accessibility state
 //
-// The previous recorder resolved a click by hit-testing the cursor position and
-// then sleeping 300ms hoping the application had rebuilt its tree. That races
-// the renderer. Instead we keep the focused element continuously up to date from
-// AXObserver notifications, so a click can be attributed immediately and the
-// positional hit test is only a fallback for controls that never take focus.
+// AXObserver maintains a versioned focus cache. The event tap can take its
+// identity without performing a blocking AX read; enrichment verifies that
+// the identity still belongs to the event before granting text permissions.
 
 let axStateLock = NSLock()
 var observedPid: pid_t?
 var observedObserver: AXObserver?
 var focusedElementCache: AXUIElement?
-var focusedWindowTitle: String?
-var focusedWindowUrl: String?
+var focusedElementGeneration: UInt64 = 0
+let enrichmentQueue = DispatchQueue(label: "human-recorder.enrichment")
+let enrichmentQueueKey = DispatchSpecificKey<Bool>()
+enrichmentQueue.setSpecific(key: enrichmentQueueKey, value: true)
+// These caches and the AX sampling clock are owned by enrichmentQueue.
+var privacyWindow: AXUIElement?
+var privacyWindowPid: pid_t?
+var privacyWindowValue = false
 
-func cachedFocusedElement() -> AXUIElement? {
-  axStateLock.lock(); defer { axStateLock.unlock() }
-  return focusedElementCache
+// Private windows are excluded from Computer History whatever the rules say,
+// but the recorder can only honor what a browser will tell it. Chrome reports a
+// window's `mode` and Arc an `incognito` flag, both over Apple Events, which
+// macOS puts behind a one-time Automation prompt. Safari exposes nothing, so a
+// private Safari window cannot be told apart and is recorded like any other.
+let privateWindowQueries: [String: String] = [
+  "com.google.Chrome": "mode of front window is \"incognito\"",
+  "company.thebrowser.Browser": "incognito of front window",
+]
+
+// Asked once when focus moves, not per event. This runs on the main run loop
+// the event tap shares, so the timeout bounds a browser that is slow to answer
+// or an Automation prompt still waiting for the user. An unanswered question —
+// refused permission included — is treated as not private: recording Chrome
+// as though it were always private would stop recording it without a word.
+func frontWindowIsPrivate(bundleId: String) -> Bool {
+  guard let condition = privateWindowQueries[bundleId] else { return false }
+  let source = """
+  with timeout of 1 second
+    tell application id "\(bundleId)" to return (\(condition))
+  end timeout
+  """
+  var error: NSDictionary?
+  guard let result = NSAppleScript(source: source)?.executeAndReturnError(&error), error == nil else {
+    return false
+  }
+  return result.booleanValue
 }
 
-func cachedWindow() -> [String: Any] {
+struct FocusSnapshot {
+  let element: AXUIElement?
+  let pid: pid_t?
+  let generation: UInt64
+}
+
+func captureFocusSnapshot() -> FocusSnapshot {
   axStateLock.lock(); defer { axStateLock.unlock() }
-  var payload: [String: Any] = [:]
-  if let focusedWindowTitle { payload["title"] = focusedWindowTitle }
-  if let focusedWindowUrl { payload["url"] = focusedWindowUrl }
-  return payload
+  return FocusSnapshot(element: focusedElementCache, pid: observedPid, generation: focusedElementGeneration)
+}
+
+func focusSnapshotIsCurrent(_ snapshot: FocusSnapshot, pid: pid_t?) -> Bool {
+  axStateLock.lock(); defer { axStateLock.unlock() }
+  return pid != nil && snapshot.pid == pid && observedPid == pid
+    && snapshot.generation == focusedElementGeneration && snapshot.element != nil
+}
+
+func keyboardTarget(snapshot: FocusSnapshot, pid: pid_t?) -> [String: Any] {
+  guard focusSnapshotIsCurrent(snapshot, pid: pid), let element = snapshot.element else {
+    return ["role": "AXUnknown"]
+  }
+  let target = nodePayload(element)
+  // AX calls may yield while focus changes. Never attach the old field's
+  // labels/value after that happens, even if they look like a search field.
+  guard focusSnapshotIsCurrent(snapshot, pid: pid), !target.isEmpty else {
+    return ["role": "AXUnknown"]
+  }
+  return target
 }
 
 func applicationEnvelope(_ application: [String: Any]? = nil) -> [String: Any] {
@@ -325,41 +396,66 @@ func applicationEnvelope(_ application: [String: Any]? = nil) -> [String: Any] {
 }
 
 func emitEvent(kind: String, application: [String: Any]? = nil, extra: [String: Any]) {
-  var payload: [String: Any] = [
-    "kind": kind,
-    "id": nextEventId(),
-    "timestamp": timestamp(),
-    "app": applicationEnvelope(application),
-  ]
-  let window = cachedWindow()
-  if !window.isEmpty { payload["window"] = window }
-  axStateLock.lock()
-  let pid = observedPid
-  axStateLock.unlock()
-  if let pid {
-    let windowKey = "\(pid):\(window["title"] as? String ?? "")"
-    if let ax = axSnapshot(pid: pid, windowKey: windowKey) { payload["ax"] = ax }
+  let source = application ?? applicationPayload()
+  let at = timestamp()
+  let capture = {
+    guard let pid = source["pid"] as? pid_t,
+          NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+    else { return }
+    let bundleId = source["bundleId"] as? String ?? ""
+    let context = currentWindow(pid: pid, bundleId: bundleId)
+    let window = context.payload
+    var payload: [String: Any] = [
+      "kind": kind, "id": nextEventId(), "timestamp": at,
+      "app": applicationEnvelope(source), "window": window,
+    ]
+    // Read the URL from this event's actual window, including same-tab
+    // navigation. Never reuse an earlier URL when the lookup fails.
+    if let element = context.element, window["privateBrowsing"] as? Bool != true {
+      let windowKey = "\(pid):\(CFHash(element)):\(window["url"] as? String ?? "")"
+      if let ax = axSnapshot(window: element, windowKey: windowKey) {
+        // Navigation during tree traversal must not attach the new page's
+        // contents to a previously allowed URL.
+        if browserBundleIds.contains(bundleId),
+           browserPage(window: element).url != window["url"] as? String {
+          lastTreeKey = nil
+          lastTreeAt = nil
+          return
+        }
+        payload["ax"] = ax
+      }
+    }
+    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+    for (key, value) in extra { payload[key] = value }
+    emit(payload)
   }
-  for (key, value) in extra { payload[key] = value }
-  emit(payload)
+  if DispatchQueue.getSpecific(key: enrichmentQueueKey) == true { capture() }
+  else { enrichmentQueue.async(execute: capture) }
 }
 
-func refreshFocusedWindow(pid: pid_t) {
+func currentWindow(pid: pid_t, bundleId: String) -> (payload: [String: Any], element: AXUIElement?) {
   let app = AXUIElementCreateApplication(pid)
   AXUIElementSetMessagingTimeout(app, 0.2)
   var windowRef: CFTypeRef?
   if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowRef) != .success {
     _ = AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &windowRef)
   }
-  let title = axElement(windowRef).flatMap { accessibilityString($0, kAXTitleAttribute as CFString) }
-  var url: String?
-  if let bundleId = applicationPayload()["bundleId"] as? String, browserBundleIds.contains(bundleId) {
-    url = browserPage(pid: pid).url
+  var payload: [String: Any] = [:]
+  if browserBundleIds.contains(bundleId) { payload["browser"] = true }
+  guard let window = axElement(windowRef) else { return (payload, nil) }
+  if let title = accessibilityString(window, kAXTitleAttribute as CFString) { payload["title"] = title }
+  if browserBundleIds.contains(bundleId), let url = browserPage(window: window).url {
+    payload["url"] = url
   }
-  axStateLock.lock()
-  focusedWindowTitle = title
-  focusedWindowUrl = url
-  axStateLock.unlock()
+  if privacyWindowPid != pid || privacyWindow == nil || !CFEqual(privacyWindow, window) {
+    privacyWindowPid = pid
+    privacyWindow = window
+    privacyWindowValue = privateWindowQueries[bundleId] == nil ? false : DispatchQueue.main.sync {
+      frontWindowIsPrivate(bundleId: bundleId)
+    }
+  }
+  if privacyWindowValue { payload["privateBrowsing"] = true }
+  return (payload, window)
 }
 
 func refreshFocusedElement(pid: pid_t) {
@@ -370,7 +466,9 @@ func refreshFocusedElement(pid: pid_t) {
         let element = axElement(ref)
   else { return }
   axStateLock.lock()
+  guard observedPid == pid else { axStateLock.unlock(); return }
   focusedElementCache = element
+  focusedElementGeneration &+= 1
   axStateLock.unlock()
 }
 
@@ -399,18 +497,15 @@ func emitSelectionChanged(_ element: AXUIElement) {
 
 // MARK: - Accessibility tree snapshots
 //
-// Every event carries the state of the focused window, but sending the whole
-// tree each time is wasteful: consecutive events usually differ by a handful of
-// nodes. Keep the previous snapshot per window and emit only what changed,
-// falling back to the full tree when there is nothing to diff against or the
-// change is large enough that a diff would not be smaller.
+// Always send a complete sampled tree to the policy-owning consumer. Computing
+// diffs here would retain an excluded tree as a baseline and later leak its
+// removed lines when that same window is allowed again. The consumer computes
+// compact diffs only from snapshots it has authorized and written to disk.
 
 let AX_TREE_MAX_NODES = 400
 let AX_TREE_MIN_INTERVAL: TimeInterval = 0.4
-let AX_DIFF_FULL_TREE_RATIO = 0.6
 
 var lastTreeKey: String?
-var lastTreeLines: [String]?
 var lastTreeAt: Date?
 
 func treeLine(_ payload: [String: Any]) -> String? {
@@ -421,15 +516,7 @@ func treeLine(_ payload: [String: Any]) -> String? {
   return ([role] + fields).joined(separator: "|")
 }
 
-func axTreeLines(pid: pid_t) -> [String] {
-  let app = AXUIElementCreateApplication(pid)
-  AXUIElementSetMessagingTimeout(app, 0.3)
-  var windowRef: CFTypeRef?
-  if AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowRef) != .success {
-    _ = AXUIElementCopyAttributeValue(app, kAXMainWindowAttribute as CFString, &windowRef)
-  }
-  guard let window = axElement(windowRef) else { return [] }
-
+func axTreeLines(window: AXUIElement) -> [String] {
   var lines: [String] = []
   var queue: [AXUIElement] = [window]
   var visited = 0
@@ -448,34 +535,16 @@ func axTreeLines(pid: pid_t) -> [String] {
 
 // Returns nil when the snapshot was taken recently enough that recomputing it
 // would cost more than the freshness is worth.
-func axSnapshot(pid: pid_t, windowKey: String) -> [String: Any]? {
+func axSnapshot(window: AXUIElement, windowKey: String) -> [String: Any]? {
   let now = Date()
-  if let lastTreeAt, now.timeIntervalSince(lastTreeAt) < AX_TREE_MIN_INTERVAL { return nil }
+  if windowKey == lastTreeKey, let lastTreeAt,
+     now.timeIntervalSince(lastTreeAt) < AX_TREE_MIN_INTERVAL { return nil }
 
-  let lines = axTreeLines(pid: pid)
+  let lines = axTreeLines(window: window)
   guard !lines.isEmpty else { return nil }
-  defer {
-    lastTreeKey = windowKey
-    lastTreeLines = lines
-    lastTreeAt = now
-  }
-
-  guard windowKey == lastTreeKey, let previous = lastTreeLines else {
-    return ["mode": "fullTree", "text": lines.joined(separator: "\n")]
-  }
-
-  let previousSet = Set(previous)
-  let currentSet = Set(lines)
-  let added = lines.filter { !previousSet.contains($0) }
-  let removed = previous.filter { !currentSet.contains($0) }
-  if added.isEmpty && removed.isEmpty { return nil }
-
-  let changed = added.count + removed.count
-  if Double(changed) > Double(max(lines.count, 1)) * AX_DIFF_FULL_TREE_RATIO {
-    return ["mode": "fullTree", "text": lines.joined(separator: "\n")]
-  }
-  let diff = removed.map { "- \($0)" } + added.map { "+ \($0)" }
-  return ["mode": "diffFromPrevious", "text": diff.joined(separator: "\n")]
+  lastTreeKey = windowKey
+  lastTreeAt = now
+  return ["mode": "fullTree", "windowKey": windowKey, "text": lines.joined(separator: "\n")]
 }
 
 let axObserverCallback: AXObserverCallback = { _, element, notification, _ in
@@ -484,22 +553,24 @@ let axObserverCallback: AXObserverCallback = { _, element, notification, _ in
   case kAXFocusedUIElementChangedNotification:
     axStateLock.lock()
     focusedElementCache = element
+    focusedElementGeneration &+= 1
     axStateLock.unlock()
   case kAXSelectedTextChangedNotification:
     emitSelectionChanged(element)
   case kAXValueChangedNotification:
-    axStateLock.lock()
-    let isFocused = focusedElementCache == nil
-    axStateLock.unlock()
-    if isFocused {
-      axStateLock.lock()
-      focusedElementCache = element
-      axStateLock.unlock()
-    }
+    // A background control changing value is not evidence that it owns focus.
+    // Keep unknown focus unknown until a focus notification or focused AX query.
+    break
   case kAXFocusedWindowChangedNotification, kAXWindowMovedNotification:
+    axStateLock.lock()
+    if name == kAXFocusedWindowChangedNotification { focusedElementCache = nil }
+    focusedElementGeneration &+= 1
+    axStateLock.unlock()
     var pid: pid_t = 0
     if AXUIElementGetPid(element, &pid) == .success {
-      refreshFocusedWindow(pid: pid)
+      if name == kAXFocusedWindowChangedNotification {
+        enrichmentQueue.async { refreshFocusedElement(pid: pid) }
+      }
       emitEvent(kind: "window.changed", extra: [:])
     }
   default:
@@ -526,6 +597,13 @@ func observeApplication(pid: pid_t) {
         let observer
   else { return }
   let app = AXUIElementCreateApplication(pid)
+  // Electron and other Chromium shells build the accessibility tree of their
+  // web content only once an assistive technology asks for it; until then a
+  // window is a frame and three buttons. Claude's was recorded as five nodes
+  // and no text, so every summary of it said nothing. Asking is what screen
+  // readers do: the tree follows within a second or two, and an application
+  // that is not Electron ignores the attribute.
+  AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
   for notification in [
     kAXFocusedUIElementChangedNotification,
     kAXSelectedTextChangedNotification,
@@ -545,19 +623,17 @@ func observeApplication(pid: pid_t) {
   observedPid = pid
   observedObserver = observer
   focusedElementCache = nil
+  focusedElementGeneration &+= 1
   axStateLock.unlock()
 
   refreshFocusedElement(pid: pid)
-  refreshFocusedWindow(pid: pid)
 }
 
 // MARK: - Event tap
 //
-// The tap still tells us *that* an interaction happened; it no longer decides
-// *what* was interacted with. Coordinates are used only to fall back to a hit
-// test and are never emitted.
-
-let enrichmentQueue = DispatchQueue(label: "human-recorder.enrichment")
+// The tap captures the interaction without waiting for AX enrichment. Mouse
+// positions identify the clicked controls through hit tests and are never
+// emitted; keyboard events use the focused element.
 
 let eventMask = (1 << CGEventType.leftMouseDown.rawValue)
   | (1 << CGEventType.leftMouseUp.rawValue)
@@ -565,16 +641,12 @@ let eventMask = (1 << CGEventType.leftMouseDown.rawValue)
   | (1 << CGEventType.keyDown.rawValue)
 
 var eventTap: CFMachPort?
+// Read and written only on enrichmentQueue, in the order tap events arrive.
 var dragOrigin: (point: CGPoint, target: [String: Any])?
 
-// Resolve what was acted on. The AXObserver-maintained focused element is
-// authoritative and always current; the positional hit test only covers
-// controls that never take focus (static links, custom canvas widgets).
+// Mouse targets come from the event position. A previously focused editor can
+// remain focused while a button or another non-focusable control is clicked.
 func resolveTarget(at point: CGPoint) -> [String: Any] {
-  if let focused = cachedFocusedElement() {
-    let payload = nodePayload(focused)
-    if hasSemanticLabel(payload) { return payload }
-  }
   if let hit = accessibilityHit(at: point), hitHasSemantics(hit.payload) {
     return hit.payload
   }
@@ -608,13 +680,13 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
   case .leftMouseUp:
     let point = event.location
     let application = applicationPayload()
-    guard let origin = dragOrigin else { break }
-    dragOrigin = nil
-    let dx = point.x - origin.point.x
-    let dy = point.y - origin.point.y
-    // Anything under a few points is a click that wobbled, not a drag.
-    guard (dx * dx + dy * dy) > 25 else { break }
     enrichmentQueue.async {
+      guard let origin = dragOrigin else { return }
+      dragOrigin = nil
+      let dx = point.x - origin.point.x
+      let dy = point.y - origin.point.y
+      // Anything under a few points is a click that wobbled, not a drag.
+      guard (dx * dx + dy * dy) > 25 else { return }
       var destination = resolveTarget(at: point)
       if destination.isEmpty { destination = ["role": "AXUnknown"] }
       emitEvent(
@@ -624,34 +696,20 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
       )
     }
   case .keyDown:
-    let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+    let keyCode = Int(event.getIntegerValueField(.keyboardEventKeycode))
     let text = characters(from: event)
     let modifiers = modifierList(event)
     let application = applicationPayload()
     let secure = secureInputActive()
+    let focus = captureFocusSnapshot()
     enrichmentQueue.async {
-      var target = cachedFocusedElement().map { nodePayload($0) } ?? [:]
-      if target.isEmpty { target = ["role": "AXUnknown"] }
-      var keyboard: [String: Any] = ["target": target]
-      if !modifiers.isEmpty { keyboard["modifiers"] = modifiers }
-
-      // Return without modifiers ends an input; it is the cheapest reliable
-      // marker of a task boundary, so it gets its own kind.
-      if keyCode == 36 && modifiers.isEmpty {
-        emitEvent(kind: "keyboard.submit", application: application, extra: ["keyboard": keyboard])
-        return
-      }
-      let named = keyNames[keyCode]
-      if !modifiers.isEmpty || named != nil {
-        keyboard["keyEquivalent"] = named ?? (text.isEmpty ? "keycode-\(keyCode)" : text)
-        keyboard["keyCode"] = Int(keyCode)
-        emitEvent(kind: "keyboard.shortcut", application: application, extra: ["keyboard": keyboard])
-        return
-      }
-      // Never carry keystroke text out of a secure input window.
-      guard !secure, !text.isEmpty else { return }
-      keyboard["text"] = text
-      emitEvent(kind: "keyboard.text_input", application: application, extra: ["keyboard": keyboard])
+      let target = keyboardTarget(snapshot: focus, pid: application["pid"] as? pid_t)
+      guard let classified = classifiedKeyboard(keyCode: keyCode, text: text, modifiers: modifiers, secure: secure),
+            let kind = classified["kind"] as? String,
+            var keyboard = classified["keyboard"] as? [String: Any]
+      else { return }
+      keyboard["target"] = target
+      emitEvent(kind: kind, application: application, extra: ["keyboard": keyboard])
     }
   case .tapDisabledByTimeout, .tapDisabledByUserInput:
     if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }

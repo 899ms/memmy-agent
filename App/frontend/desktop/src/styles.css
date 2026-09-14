@@ -11872,10 +11872,6 @@ input[type="checkbox"].check-sky:checked::after {
   color: color-mix(in srgb, var(--ch-danger) 82%, var(--color-text-ink));
 }
 
-.ch__ask-glyph {
-  font-size: 13px;
-}
-
 .ch__error {
   margin-bottom: 12px;
   padding: 10px 14px;

@@ -33,9 +33,14 @@ export interface ObservationSettings {
 
 export interface ObservationSubject {
   bundleId?: string | null;
+  /** The native recorder recognizes a browser even when URL lookup failed. */
+  browser?: boolean;
   /** Absolute URL of the focused page, when the record has a usable one. */
   url?: string | null;
-  /** Private browsing is excluded unconditionally, whatever the rules say. */
+  /**
+   * A private window is excluded whatever the rules say. Set only for
+   * browsers that report it — Chrome and Arc; never for Safari.
+   */
   privateBrowsing?: boolean;
 }
 
@@ -45,6 +50,7 @@ export interface ObservationDecision {
   reason:
     | "observed"
     | "private_browsing"
+    | "system_surface"
     | "application_blocked"
     | "application_not_allowed"
     | "url_blocked"
@@ -56,9 +62,13 @@ export interface ObservationDecision {
 // An allowlist default fails silently in the worst possible way: the UI says
 // it is recording while nothing is written, and the gap is only discovered
 // days later when the history is asked for and turns out to be empty. What
-// protects the user here is the blocklist, pause, the unconditional private
-// browsing exclusion, secure-input suppression, local-only storage and the
-// retention window — none of which depend on which way this default points.
+// protects the user here is the blocklist, pause, the exclusion of private
+// windows, secure-input suppression, local-only storage and the retention
+// window — none of which depend on which way this default points.
+//
+// The private-window exclusion is only as good as a browser's willingness to
+// say which windows are private: Chrome and Arc do, Safari does not. A private
+// Safari window is recorded unless Safari is blocked outright.
 export const DEFAULT_OBSERVATION_SETTINGS: ObservationSettings = {
   observation: {
     defaultApplicationBehavior: "observe",
@@ -66,6 +76,18 @@ export const DEFAULT_OBSERVATION_SETTINGS: ObservationSettings = {
     rules: [],
   },
 };
+
+// The login window and the screen saver are what is in front while the Mac is
+// locked or nobody is at it. Recording them wrote a summary of a locked screen
+// for every window of the night.
+const SYSTEM_SURFACE_BUNDLE_IDS = new Set(["com.apple.loginwindow", "com.apple.ScreenSaver.Engine"]);
+
+export const BROWSER_BUNDLE_IDS = new Set([
+  "com.google.Chrome", "com.google.Chrome.canary", "com.apple.Safari",
+  "com.apple.SafariTechnologyPreview", "company.thebrowser.Browser",
+  "com.microsoft.edgemac", "com.brave.Browser", "org.mozilla.firefox",
+  "org.chromium.Chromium", "com.operasoftware.Opera", "com.vivaldi.Vivaldi",
+]);
 
 function normalizeDomain(value: string): string {
   return value.trim().toLowerCase().replace(/^\.+/, "").replace(/\.+$/, "");
@@ -105,6 +127,9 @@ export function evaluateObservation(
   subject: ObservationSubject,
 ): ObservationDecision {
   if (subject.privateBrowsing) return { observe: false, reason: "private_browsing" };
+  if (subject.bundleId && SYSTEM_SURFACE_BUNDLE_IDS.has(subject.bundleId)) {
+    return { observe: false, reason: "system_surface" };
+  }
 
   const { defaultApplicationBehavior, defaultURLBehavior, rules } = settings.observation;
 
@@ -120,9 +145,17 @@ export function evaluateObservation(
     };
   }
 
-  // A record without a usable URL is judged by its application alone.
+  // Native apps have no website axis. A browser with an unknown URL cannot
+  // prove that it is outside a blocked site (or inside a website allowlist).
   const host = subject.url ? hostFromUrl(subject.url) : null;
-  if (!host) return { observe: true, reason: "observed" };
+  if (!host) {
+    const browser = subject.browser || BROWSER_BUNDLE_IDS.has(subject.bundleId ?? "");
+    const restrictsWebsites = defaultURLBehavior === "do_not_observe"
+      || rules.some((rule) => rule.scope === "url" && rule.behavior === "do_not_observe");
+    return browser && restrictsWebsites
+      ? { observe: false, reason: "url_not_allowed" }
+      : { observe: true, reason: "observed" };
+  }
 
   const urlRules = rules.filter(
     (rule): rule is UrlRule => rule.scope === "url" && domainMatches(host, rule.urlDomain),
