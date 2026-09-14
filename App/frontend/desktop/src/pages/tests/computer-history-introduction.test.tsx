@@ -86,13 +86,13 @@ describe("passive Computer History introduction", () => {
     expect(content()).toContain("你在电脑上看过的聊天");
     expect(document.activeElement).toBe(next);
     await act(async () => next.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
-    expect(content()).toContain("来自上周四访问过的原文链接");
+    expect(content()).toContain("聊天与浏览器中的访问记录");
     await act(async () => next.click());
-    expect(content()).toContain("项目发布流程");
+    expect(content()).toContain("可以按这段操作整理成可复用的技能");
     await act(async () => button("上一个示例").click());
     expect(content()).toContain("产品规划");
     await act(async () => button("找出聊过的待办").click());
-    expect(content()).toContain("发送更新后的排期");
+    expect(content()).toContain("整理出了两项待办");
     expect(button("找出聊过的待办").getAttribute("aria-current")).toBe("true");
     expect(state.api.getComputerHistory).toHaveBeenCalledOnce();
     expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
