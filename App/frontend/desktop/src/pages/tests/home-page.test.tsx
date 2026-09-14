@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Window } from "happy-dom";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { MemmyAgentMessageRejectedError, MemmyAgentRequestError } from "../../api/memmy-agent-client.js";
+import { MemmyAgentMessageRejectedError } from "../../api/memmy-agent-client.js";
 import { AgentRuntimeBridge } from "../../app/agent-runtime-bridge.js";
 import { AppProviders } from "../../app/providers.js";
 import { FOCUSED_AGENT_CHAT_STORAGE_KEY } from "../../app/routes.js";
