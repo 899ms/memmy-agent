@@ -81,7 +81,8 @@ const memoryNavSections: MemoryNavSection[] = [
       { id: "policies", labelKey: "memory.nav.policies", icon: <Sparkles size={16} /> },
       { id: "world-model", labelKey: "memory.nav.worldModel", icon: <Globe2 size={16} /> },
       { id: "skills", labelKey: "memory.nav.skills", icon: <Wand2 size={16} /> },
-      { id: "user-memories", labelKey: "memory.nav.userMemories", icon: <UserRound size={16} /> }
+      { id: "user-memories", labelKey: "memory.nav.userMemories", icon: <UserRound size={16} /> },
+      { id: "computer-history", labelKey: "memory.nav.computerHistory", icon: <ScrollText size={16} /> }
     ]
   },
   {
@@ -94,8 +95,7 @@ const memoryNavSections: MemoryNavSection[] = [
   {
     titleKey: "memory.nav.system",
     items: [
-      { id: "sources", labelKey: "memory.sourcesNav", icon: <Link2 size={16} /> },
-      { id: "computer-history", labelKey: "memory.nav.computerHistory", icon: <ScrollText size={16} /> }
+      { id: "sources", labelKey: "memory.sourcesNav", icon: <Link2 size={16} /> }
     ]
   }
 ];

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChevronDown, Info } from "lucide-react";
+import { Button } from "../../components/button.js";
+import { Tooltip } from "../../components/tooltip.js";
 import type {
   ComputerHistoryEntry,
   ComputerHistorySnapshot,
@@ -10,6 +13,8 @@ import type {
 import { useTranslation } from "../../i18n/use-translation.js";
 import { MemoryMarkdown } from "./memory-markdown.js";
 import { AppIcon } from "./app-icon.js";
+import { ScrollText, Trash2 } from "./memory-prototype-icons.js";
+import { ComputerHistoryRecordingConfirmation } from "./computer-history-recording-confirmation.js";
 
 export interface ComputerHistorySubPageProps {
   client: MemmyAgentClient | null;
@@ -146,6 +151,7 @@ function Prose(props: { text: string }) {
 export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<ComputerHistorySnapshot | null>(null);
+  const [pendingRecordingAction, setPendingRecordingAction] = useState<"start" | "resume" | null>(null);
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(() => new Set());
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [clearMenuOpen, setClearMenuOpen] = useState(false);
@@ -181,6 +187,10 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
     void refresh();
     return () => { appliedVersion.current = ++requestVersion.current; };
   }, [refresh]);
+
+  useEffect(() => {
+    setPendingRecordingAction(null);
+  }, [props.client]);
 
   useEffect(() => {
     const state = snapshot?.observation.state;
@@ -273,56 +283,83 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
   }, [t]);
 
   return (
-    <section className="ch">
-      <header className="ch__head">
-        <h1>
-          Computer History
-          <span
-            className="ch__info"
-            title={t("computerHistory.info")}
-            aria-hidden
-          >
-            i
-          </span>
-        </h1>
+    <section className="memory-panel ch">
+      <header className="memory-panel__header">
+        <div className="memory-panel__header-main">
+          <h3 className="memory-panel__title">
+            <ScrollText size={18} className="text-text-ink/60" />
+            {t("memory.nav.computerHistory")}
+          </h3>
+          <p id="computer-history-record-description" className="memory-panel__subtitle">{t("computerHistory.recordDescription")}</p>
+        </div>
+      </header>
+
+      <div className="ch__recording-setting flex items-center justify-between bg-background-paper rounded-card-lg border-content-panel">
+        <div className="flex-1 pr-4">
+          <div id="computer-history-record-label" className="text-sm text-text-ink/70">{t("computerHistory.record")}</div>
+        </div>
         <div className="ch__head-actions">
-          {/* Codex records all day and so has no switch. Memmy only records
-              when asked, which is the whole privacy story, so the control
-              belongs where the eye already goes for actions. */}
           {paused ? (
-            <button
+            <Button
               type="button"
-              className="ch__button"
+              variant="ghost"
+              size="sm"
               disabled={busy || !props.client}
-              onClick={() => void runAction((client) => client.resumeComputerHistoryObservation())}
+              onClick={() => setPendingRecordingAction("resume")}
             >
               {t("computerHistory.resume")}
-            </button>
+            </Button>
           ) : null}
           <button
             type="button"
-            className={recording || paused ? "ch__button ch__button--recording" : "ch__button"}
-            disabled={busy || !props.client}
-            aria-pressed={recording || paused}
+            role="switch"
+            aria-checked={recording || paused}
+            aria-labelledby="computer-history-record-label"
+            aria-describedby="computer-history-record-description"
+            disabled={busy || !props.client || !snapshot || observationState === "stopping"}
+            className={`ch__recording-switch relative inline-flex shrink-0 h-5 w-9 items-center rounded-full border-0 p-0 cursor-pointer transition-colors ${
+              recording || paused ? "bg-action-sky" : "bg-border-stone"
+            }`}
             onClick={() => recording || paused
               ? void runAction((client) => client.stopComputerHistoryObservation())
-              : void runAction((client) => client.startComputerHistoryObservation())}
+              : setPendingRecordingAction("start")}
           >
-            {recording ? <span className="ch__recording-dot" /> : null}
-            {recording
-              ? t("computerHistory.recording")
-              : paused ? t("computerHistory.pausedStop") : t("computerHistory.startRecording")}
+            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${recording || paused ? "translate-x-[18px]" : "translate-x-0.5"}`} />
           </button>
+        </div>
+      </div>
+
+      <div className="ch__head">
+        <h4 className="ch__history-title text-sm font-semibold text-text-ink">
+          {t("computerHistory.history")}
+          <Tooltip content={t("computerHistory.info")} openOnClick variant="description">
+            <button type="button" className="ch__info" aria-label={t("memory.learnMore")}><Info size={16} strokeWidth={1.7} aria-hidden="true" /></button>
+          </Tooltip>
+        </h4>
+        <div className="ch__head-actions ch__history-actions">
+          {recording || paused ? (
+            <span
+              className={`memory-pill ch__recording-status${paused ? "" : " memory-pill--processing"}`}
+              role="status"
+            >
+              <span className="ch__recording-status-dot" aria-hidden="true" />
+              {t(paused ? "computerHistory.paused" : "computerHistory.recording")}
+            </span>
+          ) : null}
           <div className="ch__menu" ref={clearMenuRef}>
-            <button
+            <Button
               type="button"
-              className="ch__button"
+              size="sm"
+              className="ch__clear-button"
               disabled={busy || !props.client}
               aria-expanded={clearMenuOpen}
+              aria-haspopup="menu"
               onClick={() => setClearMenuOpen((open) => !open)}
             >
-              {t("computerHistory.clear")} <span className="ch__caret" aria-hidden>⌄</span>
-            </button>
+              <Trash2 size={14} />
+              {t("computerHistory.clear")}
+              <ChevronDown size={12} />
+            </Button>
             {clearMenuOpen ? (
               <div className="ch__menu-sheet" role="menu">
                 <button type="button" role="menuitem" onClick={() => void clearHistories("today")}>
@@ -340,7 +377,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
             ) : null}
           </div>
         </div>
-      </header>
+      </div>
 
       {error ? <div className="ch__error" role="alert">{error}</div> : null}
       {refreshError ? <div className="ch__error" role="alert">{refreshError}</div> : null}
@@ -349,7 +386,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
         <div className="ch__error" role="alert">{t("computerHistory.narrationFailed", { error: narrationError })}</div>
       ) : null}
 
-      <div className="ch__feed">
+      <div className="ch__feed bg-background-paper rounded-card-lg border-content-panel">
         {days.length ? days.map((day) => {
           const collapsed = collapsedDays.has(day.key);
           return (
@@ -361,7 +398,11 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                 onClick={() => toggleDay(day.key)}
               >
                 {day.label}
-                <span className={collapsed ? "ch__caret ch__caret--collapsed" : "ch__caret"} aria-hidden>⌄</span>
+                <ChevronDown
+                  size={16}
+                  className={collapsed ? "ch__caret ch__caret--collapsed" : "ch__caret"}
+                  aria-hidden="true"
+                />
               </button>
               {collapsed ? null : day.entries.map((entry, index) => {
                 const next = day.entries[index + 1];
@@ -402,16 +443,16 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                           <button
                             type="button"
                             className={pendingDeleteId === entry.id
-                              ? "ch-entry__action ch-entry__action--confirm"
-                              : "ch-entry__action"}
-                            disabled={busy || entry.id === openEntryId}
+                              ? "ch-entry__action ch-entry__action--delete ch-entry__action--confirm"
+                              : "ch-entry__action ch-entry__action--delete"}
+                            disabled={busy || !props.client || entry.id === openEntryId}
                             title={t(entry.id === openEntryId
                               ? "computerHistory.deleteRecording"
                               : pendingDeleteId === entry.id ? "computerHistory.deleteAgain" : "computerHistory.delete")}
                             aria-label={t(pendingDeleteId === entry.id ? "computerHistory.confirmDeleteLabel" : "computerHistory.deleteLabel", { title: entry.title })}
                             onClick={() => void deleteHistory(entry.id)}
                           >
-                            {pendingDeleteId === entry.id ? t("computerHistory.confirm") : "🗑"}
+                            {pendingDeleteId === entry.id ? t("computerHistory.confirm") : <Trash2 size={14} />}
                           </button>
                         </div>
                       </div>
@@ -441,6 +482,17 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
       </div>
 
       <WorkflowSection snapshot={snapshot} />
+      <ComputerHistoryRecordingConfirmation
+        open={pendingRecordingAction !== null}
+        onCancel={() => setPendingRecordingAction(null)}
+        onConfirm={() => {
+          const action = pendingRecordingAction;
+          setPendingRecordingAction(null);
+          if (action) void runAction((client) => action === "resume"
+            ? client.resumeComputerHistoryObservation()
+            : client.startComputerHistoryObservation());
+        }}
+      />
     </section>
   );
 }
