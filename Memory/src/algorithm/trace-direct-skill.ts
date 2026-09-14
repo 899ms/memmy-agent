@@ -480,7 +480,7 @@ export function selectTop6Members(
 
 export function packRawTurnEvidence(
   turns: RawTurnLike[],
-  clipChars = DEFAULT_DIRECT_SKILL_CLUSTERING.toolOutputClip
+  clipChars: number = DEFAULT_DIRECT_SKILL_CLUSTERING.toolOutputClip
 ): PackedRawTurn[] {
   return turns.map((turn) => ({
     user: (turn.userText ?? "").trim(),
@@ -746,7 +746,7 @@ function packSkillGuideSections(guide: string): string {
       continue;
     }
     sections.push({
-      key: match[1].trim().toLowerCase(),
+      key: (match[1] ?? "").trim().toLowerCase(),
       chunk: chunk.trim()
     });
   }

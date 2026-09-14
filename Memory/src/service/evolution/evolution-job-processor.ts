@@ -111,7 +111,7 @@ export class EvolutionJobProcessor {
       upsertEvolutionMemory: this.upsertEvolutionMemory.bind(this),
       enqueueJob: deps.enqueueJob,
       namespaceIdFromMemory: deps.namespaceIdFromMemory,
-      queryVector: (query) => owner.deps.queryVector?.(query)
+      queryVector: (query) => owner.deps.queryVector?.(query) ?? Promise.resolve(undefined)
     });
     this.policy = new PolicyInductionEngine({
       get config() { return owner.deps.config; },
