@@ -307,11 +307,6 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
           <div id="computer-history-record-label" className="text-sm text-text-ink/70">{t("computerHistory.record")}</div>
         </div>
         <div className="ch__head-actions">
-          {recording || paused ? (
-            <span className="ch__recording-status" role="status">
-              {t(paused ? "computerHistory.paused" : "computerHistory.recording")}
-            </span>
-          ) : null}
           {paused ? (
             <Button
               type="button"
@@ -349,35 +344,46 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
             <button type="button" className="ch__info" aria-label={t("memory.learnMore")}><Info size={16} strokeWidth={1.7} aria-hidden="true" /></button>
           </Tooltip>
         </h4>
-        <div className="ch__menu" ref={clearMenuRef}>
-          <Button
-            type="button"
-            size="sm"
-            className="ch__clear-button"
-            disabled={busy || !props.client}
-            aria-expanded={clearMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setClearMenuOpen((open) => !open)}
-          >
-            <Trash2 size={14} />
-            {t("computerHistory.clear")}
-            <ChevronDown size={12} />
-          </Button>
-          {clearMenuOpen ? (
-            <div className="ch__menu-sheet" role="menu">
-              <button type="button" role="menuitem" onClick={() => void clearHistories("today")}>
-                {t("computerHistory.clearToday")}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="ch__menu-item--danger"
-                onClick={() => void clearHistories("all")}
-              >
-                {t("computerHistory.clearAll")}
-              </button>
-            </div>
+        <div className="ch__head-actions ch__history-actions">
+          {recording || paused ? (
+            <span
+              className={`memory-pill ch__recording-status${paused ? "" : " memory-pill--processing"}`}
+              role="status"
+            >
+              <span className="ch__recording-status-dot" aria-hidden="true" />
+              {t(paused ? "computerHistory.paused" : "computerHistory.recording")}
+            </span>
           ) : null}
+          <div className="ch__menu" ref={clearMenuRef}>
+            <Button
+              type="button"
+              size="sm"
+              className="ch__clear-button"
+              disabled={busy || !props.client}
+              aria-expanded={clearMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setClearMenuOpen((open) => !open)}
+            >
+              <Trash2 size={14} />
+              {t("computerHistory.clear")}
+              <ChevronDown size={12} />
+            </Button>
+            {clearMenuOpen ? (
+              <div className="ch__menu-sheet" role="menu">
+                <button type="button" role="menuitem" onClick={() => void clearHistories("today")}>
+                  {t("computerHistory.clearToday")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ch__menu-item--danger"
+                  onClick={() => void clearHistories("all")}
+                >
+                  {t("computerHistory.clearAll")}
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
