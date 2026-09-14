@@ -50,7 +50,8 @@ export function ComputerHistoryIntroduction(props: {
 }) {
   const { t } = useTranslation();
   const [loaded, setLoaded] = useState(false);
-  const [recording, setRecording] = useState(false);
+  // Default the introduction's draft to on; only confirmation changes recording.
+  const [recording, setRecording] = useState(true);
   const [initial, setInitial] = useState(false);
   const [state, setState] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,7 +95,6 @@ export function ComputerHistoryIntroduction(props: {
     void props.client.getComputerHistory().then((history) => {
       if (!active) return;
       const enabled = history.observation.state === "running";
-      setRecording(enabled);
       setInitial(enabled);
       setState(history.observation.state);
       setLoaded(true);

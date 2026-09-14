@@ -65,13 +65,25 @@ describe("passive Computer History introduction", () => {
     expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
   });
 
-  it("uses the upstream start response without requiring a prototype recorderReady field", async () => {
+  it("defaults the draft to on and starts only after confirmation", async () => {
     const state = client();
     const { onApplied } = await render(state.value);
-    await act(async () => button("开启计算机使用记录").click());
+    expect(button("开启计算机使用记录").getAttribute("aria-checked")).toBe("true");
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
     await act(async () => button("开始体验").click());
     expect(state.api.startComputerHistoryObservation).toHaveBeenCalledOnce();
     expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
+  });
+
+  it("does not start recording when the default-on introduction is dismissed", async () => {
+    const state = client();
+    const { onApplied, onClose } = await render(state.value);
+    await act(async () => button("稍后再看").click());
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
   });
 
   it("browses all three history examples without applying settings or losing navigation focus", async () => {
@@ -101,9 +113,10 @@ describe("passive Computer History introduction", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("does not stop a paused session when no setting was changed", async () => {
+  it("preserves a paused session when the default-on suggestion is turned off", async () => {
     const state = client(snapshot("paused"));
     const { onApplied } = await render(state.value);
+    await act(async () => button("开启计算机使用记录").click());
     await act(async () => button("知道了").click());
     expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
     expect(onApplied).toHaveBeenCalledWith(snapshot("paused"));
@@ -124,7 +137,6 @@ describe("passive Computer History introduction", () => {
       throw new Error("请先授予辅助功能权限");
     });
     const { onApplied } = await render(state.value);
-    await act(async () => button("开启计算机使用记录").click());
     await act(async () => button("开始体验").click());
     expect(onApplied).not.toHaveBeenCalled();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("辅助功能权限");
@@ -148,6 +160,6 @@ describe("passive Computer History introduction", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("连接暂不可用");
     expect(button("暂不可用").disabled).toBe(true);
     await act(async () => button("重新读取").click());
-    expect(button("知道了").disabled).toBe(false);
+    expect(button("开始体验").disabled).toBe(false);
   });
 });
