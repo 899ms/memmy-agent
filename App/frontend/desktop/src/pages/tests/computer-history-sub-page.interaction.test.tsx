@@ -35,6 +35,7 @@ describe("ComputerHistorySubPage", () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.replaceChildren();
+    Reflect.deleteProperty(window, "memmy");
     vi.useRealTimers();
   });
 
@@ -111,6 +112,36 @@ describe("ComputerHistorySubPage", () => {
     // An application is an icon, with the bundle id kept for the reader who
     // hovers or uses a screen reader.
     expect(container.querySelector('[aria-label="com.apple.Notes"]')).not.toBeNull();
+  });
+
+  it("opens an entry's complete Markdown file through the desktop bridge", async () => {
+    const openComputerHistoryMarkdown = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, "memmy", {
+      configurable: true,
+      value: { openComputerHistoryMarkdown },
+    });
+    await renderWith(snapshot());
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="打开 My recording 的完整 Markdown"]')?.click();
+    });
+
+    expect(openComputerHistoryMarkdown).toHaveBeenCalledWith("/tmp/history-1.md");
+    expect(openComputerHistoryMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a readable error when the desktop cannot open the Markdown file", async () => {
+    Object.defineProperty(window, "memmy", {
+      configurable: true,
+      value: { openComputerHistoryMarkdown: vi.fn().mockRejectedValue(new Error("no default editor")) },
+    });
+    await renderWith(snapshot());
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="打开 My recording 的完整 Markdown"]')?.click();
+    });
+
+    expect(container.textContent).toContain("打开 Markdown 失败：no default editor");
   });
 
   it("keeps a current window at ten-minute resolution", async () => {

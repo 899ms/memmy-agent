@@ -15,7 +15,9 @@ import {
 import type { LLMRuntimeResolver } from "../../../utils/llm-runtime.js";
 import {
   alignedId,
+  SIX_HOUR_MS,
   isLocalSixHourWindow,
+  isSixHourWindowClosed,
   isCompletedCapturedSummary,
   rollupCoveredHistoryIds,
   sixHourWindowStart,
@@ -137,8 +139,8 @@ const PRIOR_SUMMARY_COUNT = 2;
 // A pinned segment keeps its raw events past the retention window.
 const PIN_MARKER = ".pinned";
 
-// A six-hour rollup is cheap because it reuses ten-minute summaries, so it can
-// run every time a segment is finalized rather than on its own schedule.
+// Six-hour rollups reuse completed ten-minute summaries, but are narrated only
+// after the whole local window closes.
 
 
 interface MarkdownEntry {
@@ -503,6 +505,7 @@ export class ComputerHistoryDemoService {
 
   snapshot(): ComputerHistorySnapshot {
     this.cleanupExpiredRecordings();
+    const snapshotAt = new Date();
     return {
       observation: {
         state: this.observationState,
@@ -525,6 +528,14 @@ export class ComputerHistoryDemoService {
         // generated too: read as "imported", they slipped past this gate and
         // put a templated body on the timeline.
         .filter((entry) => !isMachineSummary(entry.sourceType) || isNarrated(entry.markdown))
+        // Hide partial accounts left by the former incremental implementation.
+        // They remain on disk so the closed-window pass can safely replace or
+        // retain them, but they are not final history while the window is open.
+        .filter((entry) => {
+          if (entry.summaryWindow !== "6h") return true;
+          const windowStart = instantFromId(entry.id);
+          return windowStart !== null && isSixHourWindowClosed(windowStart, snapshotAt);
+        })
         .filter((entry) => !isCodexSkysightCopy(entry.id))
         .map((entry) => ({
           ...entry,
@@ -793,6 +804,13 @@ export class ComputerHistoryDemoService {
     const llmRuntime = this.llmRuntime;
     if (!llmRuntime || this.shuttingDown) return Promise.resolve(false);
     const destination = file.endsWith(".staging") ? file.slice(0, -".staging".length) : file;
+    if (window === "6h") {
+      const windowStart = instantFromId(path.basename(destination, ".md"));
+      // Existing pending files from the former incremental implementation can
+      // survive an upgrade. Keep them off the model path until the complete
+      // window is available, just like newly prepared rollups.
+      if (!windowStart || !isSixHourWindowClosed(windowStart)) return Promise.resolve(false);
+    }
     const version = this.summaryVersions.get(destination) ?? 0;
     const active = this.summaryJobs.get(destination);
     if (active?.version === version && active.runtime === llmRuntime) return active.promise;
@@ -864,7 +882,7 @@ export class ComputerHistoryDemoService {
     }
   }
 
-  /** Rebuilds the six-hour summary covering the segment that just closed. */
+  /** Builds the final six-hour summary once the segment closes its whole window. */
   private writeSixHourRollup(segmentId: string): void {
     const at = instantFromId(segmentId);
     if (!at) return;
@@ -892,8 +910,13 @@ export class ComputerHistoryDemoService {
       .filter((file): file is string => file !== null);
   }
 
-  /** Writes the mechanical six-hour summary for one window; the model writes it later. */
+  /** Writes the mechanical six-hour summary for a closed window; the model writes it later. */
   private writeRollupFor(windowStart: Date, summaries = this.storedTenMinuteSummaries()): string | null {
+    // Ten-minute summaries provide the live view while this window is open.
+    // Preparing a partial rollup here used to trigger up to 36 model rewrites
+    // for one final account and made its meaning change every ten minutes.
+    if (!isSixHourWindowClosed(windowStart)) return null;
+    if (this.hasPendingTenMinuteSummary(windowStart)) return null;
     const rollup = buildSixHourSummary(summaries, windowStart);
     if (!rollup) return null;
     const rollupFile = path.join(this.historyDirectory, rollup.fileName);
@@ -927,6 +950,26 @@ export class ComputerHistoryDemoService {
       atomicWriteText(destination, markdown);
     }
     return destination;
+  }
+
+  /** Wait until every captured source in the closed window has finished narration. */
+  private hasPendingTenMinuteSummary(windowStart: Date): boolean {
+    if (!fs.existsSync(this.historyDirectory)) return false;
+    const start = windowStart.getTime();
+    const end = start + SIX_HOUR_MS;
+    return fs.readdirSync(this.historyDirectory).some((name) => {
+      const destinationName = name.endsWith(".md.staging") ? name.slice(0, -".staging".length) : name;
+      if (!destinationName.endsWith("-10min-summary.md")) return false;
+      const id = destinationName.slice(0, -3);
+      const at = instantFromId(id)?.getTime();
+      if (at === undefined || at < start || at >= end) return false;
+      const markdown = readText(path.join(this.historyDirectory, name));
+      if (!markdown) return false;
+      const source = readFrontmatterValue(markdown, "source_type");
+      return (source === "captured" || source === "human_computer_history")
+        && readFrontmatterValue(markdown, "status") === "completed"
+        && !isNarrated(markdown);
+    });
   }
 
   /**
@@ -1796,7 +1839,7 @@ function buildRecordedExperienceWorkflow(input: {
     "## Execution contract",
     "",
     "1. Start by stating the current request, the source History title, and the safety boundary inferred from the request.",
-    "2. Prefer the Open Computer Use MCP tools `mcp_open_computer_use_list_apps`, `mcp_open_computer_use_get_app_state`, `mcp_open_computer_use_click`, `mcp_open_computer_use_type_text`, `mcp_open_computer_use_press_key`, and `mcp_open_computer_use_scroll`. Use built-in `computer_*` tools only if the MCP tools are unavailable; never mix executors within one gate and do not start a CUA subprocess.",
+    "2. Use only the Open Computer Use MCP tools `mcp_open_computer_use_list_apps`, `mcp_open_computer_use_get_app_state`, `mcp_open_computer_use_click`, `mcp_open_computer_use_type_text`, `mcp_open_computer_use_press_key`, and `mcp_open_computer_use_scroll`. If these tools are unavailable, stop and report the workflow as blocked; never substitute another desktop executor.",
     "3. Execute the gates below strictly in order. Maintain a visible checklist such as `G1 verified / G2 pending`; never search for a later action while an earlier gate is unresolved.",
     "4. Start with `list_apps` and `get_app_state`. Open Computer Use action tools return refreshed post-action state; use that result as verification evidence instead of immediately calling `get_app_state` again. Read state again only after an out-of-band UI change or when the action result lacks the evidence needed for the next gate.",
     "5. Element indexes are state-scoped. Use only an `element_index` from the latest returned state, and never reuse an index after a click, key action, scroll, navigation, modal change, or page reload.",

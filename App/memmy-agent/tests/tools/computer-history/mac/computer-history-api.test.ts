@@ -112,6 +112,10 @@ describe("ComputerHistoryDemoService", () => {
 
     expect(workflow.sourceHistoryId).toBe(history.id);
     expect(workflow.markdown).toContain("generated_from: recorded_operation_experience");
+    expect(workflow.markdown).toContain("Use only the Open Computer Use MCP tools");
+    expect(workflow.markdown).toContain("mcp_open_computer_use_get_app_state");
+    expect(workflow.markdown).not.toContain("mcp_cua_");
+    expect(workflow.markdown).not.toContain("built-in `computer_*`");
     expect(workflow.markdown).toContain("银色");
   });
 

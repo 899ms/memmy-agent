@@ -65,6 +65,11 @@ export function isLocalSixHourWindow(start: Date): boolean {
   return sixHourWindowStart(start).getTime() === start.getTime();
 }
 
+/** A rollup becomes final only after its complete local six-hour window has elapsed. */
+export function isSixHourWindowClosed(start: Date, now = new Date()): boolean {
+  return now.getTime() >= start.getTime() + SIX_HOUR_MS;
+}
+
 function frontmatterValue(markdown: string, key: string): string | null {
   const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u)?.[1];
   if (!frontmatter) return null;
