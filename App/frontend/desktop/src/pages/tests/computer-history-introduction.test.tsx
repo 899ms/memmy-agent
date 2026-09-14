@@ -71,8 +71,84 @@ describe("passive Computer History introduction", () => {
     expect(button("开启计算机使用记录").getAttribute("aria-checked")).toBe("true");
     expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
     await act(async () => button("开始体验").click());
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(onApplied).not.toHaveBeenCalled();
+    await act(async () => button("确认开启").click());
     expect(state.api.startComputerHistoryObservation).toHaveBeenCalledOnce();
     expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
+  });
+
+  it.each(["stopped", "failed", "paused"] as const)("does not activate a %s recorder when the second confirmation is cancelled", async (initial) => {
+    const state = client(snapshot(initial));
+    const { onApplied, onClose } = await render(state.value);
+    const begin = button("开始体验");
+    begin.focus();
+    await act(async () => begin.click());
+    expect(document.body.textContent).toContain("开启计算机使用记录？");
+    expect(document.querySelector(".chi-dialog")?.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).toBe(button("返回"));
+
+    await act(async () => button("返回").click());
+
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.stopComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.querySelector(".chi-dialog")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(begin);
+    expect(button("开启计算机使用记录").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it.each(["failed", "paused"] as const)("requires confirmation before activating a %s recorder", async (initial) => {
+    const state = client(snapshot(initial));
+    const { onApplied } = await render(state.value);
+    await act(async () => button("开始体验").click());
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+
+    await act(async () => button("确认开启").click());
+
+    expect(state.api.startComputerHistoryObservation).toHaveBeenCalledTimes(initial === "failed" ? 1 : 0);
+    expect(state.api.resumeComputerHistoryObservation).toHaveBeenCalledTimes(initial === "paused" ? 1 : 0);
+    expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
+  });
+
+  it.each([true, false])("applies a running recorder's %s setting without another enabling confirmation", async (enabled) => {
+    const state = client(snapshot("running"));
+    const { onApplied } = await render(state.value);
+    if (!enabled) await act(async () => button("开启计算机使用记录").click());
+    await act(async () => button(enabled ? "知道了" : "保存设置").click());
+
+    expect(document.body.textContent).not.toContain("开启计算机使用记录？");
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.stopComputerHistoryObservation).toHaveBeenCalledTimes(enabled ? 0 : 1);
+    expect(onApplied).toHaveBeenCalledWith(snapshot(enabled ? "running" : "stopped"));
+  });
+
+  it("keeps keyboard focus in the confirmation and Escape dismisses only that confirmation", async () => {
+    const state = client();
+    const { onClose } = await render(state.value);
+    const begin = button("开始体验");
+    begin.focus();
+    await act(async () => begin.click());
+    const confirm = button("确认开启");
+    const innerDialog = confirm.closest('[role="dialog"]');
+    confirm.focus();
+    await act(async () => confirm.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })));
+    expect(innerDialog?.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(confirm);
+
+    await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("开启计算机使用记录？");
+    expect(document.activeElement).toBe(begin);
+    expect(state.api.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(state.api.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    await act(async () => begin.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("does not start recording when the default-on introduction is dismissed", async () => {
@@ -138,9 +214,12 @@ describe("passive Computer History introduction", () => {
     });
     const { onApplied } = await render(state.value);
     await act(async () => button("开始体验").click());
+    await act(async () => button("确认开启").click());
     expect(onApplied).not.toHaveBeenCalled();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("辅助功能权限");
     await act(async () => button("开始体验").click());
+    expect(state.api.startComputerHistoryObservation).toHaveBeenCalledOnce();
+    await act(async () => button("确认开启").click());
     expect(onApplied).toHaveBeenCalledWith(snapshot("running"));
   });
 
