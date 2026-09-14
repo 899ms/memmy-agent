@@ -26,6 +26,17 @@ DEFAULT_PRIORITY_NAME = "中"
 DEFAULT_WORKITEM_CATEGORY = "Req"
 DEFAULT_WORKITEM_TYPE_NAME = "需求"
 DEFAULT_DAYS_TO_FINISH = 7
+DEFAULT_PARTICIPANT_NAMES = ("徐之淇", "贾澄臻")
+# GitHub exposes the relationship between a pull-request author and the
+# repository. Only community-facing associations enter the Yunxiao space.
+EXTERNAL_PR_AUTHOR_ASSOCIATIONS = frozenset(
+    {
+        "CONTRIBUTOR",
+        "FIRST_TIMER",
+        "FIRST_TIME_CONTRIBUTOR",
+        "NONE",
+    }
+)
 REQUIRED_ENV = (
     "YUNXIAO_PROJECT_ID",
     "YUNXIAO_PROJECT_NAME",
@@ -126,6 +137,12 @@ def source_status(item_type: str, item: dict[str, Any]) -> str:
     return "已取消"
 
 
+def should_sync_pull_request(item: dict[str, Any]) -> bool:
+    """Return whether a pull request was submitted by a community user."""
+    association = str(item.get("author_association") or "").strip().upper()
+    return association in EXTERNAL_PR_AUTHOR_ASSOCIATIONS
+
+
 def item_id(item: dict[str, Any]) -> str:
     for key in ("id", "identifier", "organizationId", "userId", "statusId", "value"):
         value = item.get(key)
@@ -197,6 +214,8 @@ def preflight(
     workitem_type_name: str = DEFAULT_WORKITEM_TYPE_NAME,
     priority_name: str = DEFAULT_PRIORITY_NAME,
     parent_id: str | None = None,
+    sprint_id: str | None = None,
+    participant_names: tuple[str, ...] = DEFAULT_PARTICIPANT_NAMES,
 ) -> dict[str, Any]:
     organizations = list_or_extract(client.get("/oapi/v1/platform/organizations"), ())
     if not organizations:
@@ -241,12 +260,18 @@ def preflight(
     type_id = item_id(workitem_type)
 
     assignee_id = ""
-    if assignee_name:
+    participant_ids: list[str] = []
+    if assignee_name or participant_names:
         members = list_or_extract(
             client.get(f"/oapi/v1/projex/organizations/{org}/projects/{project_id}/members"),
             ("members",),
         )
-        assignee_id = item_id(find_by_name(members, assignee_name, "默认负责人"))
+        if assignee_name:
+            assignee_id = item_id(find_by_name(members, assignee_name, "默认负责人"))
+        for participant_name in participant_names:
+            participant_id = item_id(find_by_name(members, participant_name, "默认参与者"))
+            if participant_id not in participant_ids:
+                participant_ids.append(participant_id)
 
     workflow = list_or_extract(
         client.get(
@@ -291,9 +316,11 @@ def preflight(
         "type_id": type_id,
         "type_name": item_name(workitem_type) or workitem_type_name,
         "assignee_id": assignee_id,
+        "participant_ids": participant_ids,
         "priority_id": item_id(priority),
         "statuses": statuses,
         "parent_id": parent_id or "",
+        "sprint_id": sprint_id or "",
     }
 
 
@@ -458,10 +485,17 @@ def sync_one(
         if not apply:
             return "dry-run-status"
         status_name = source_status(item_type, item)
+        update_payload: dict[str, Any] = {"status": cfg["statuses"][status_name]}
+        if cfg.get("sprint_id"):
+            update_payload["sprint"] = cfg["sprint_id"]
+        if cfg.get("assignee_id"):
+            update_payload["assignedTo"] = cfg["assignee_id"]
+        if cfg.get("participant_ids"):
+            update_payload["participants"] = cfg["participant_ids"]
         client.transport(
             "PUT",
             f"/oapi/v1/projex/organizations/{org}/workitems/{existing_id}",
-            {"status": cfg["statuses"][status_name]},
+            update_payload,
         )
         return "updated-status"
 
@@ -485,6 +519,12 @@ def sync_one(
         payload.pop("assignedTo")
     if cfg.get("parent_id"):
         payload["parentId"] = cfg["parent_id"]
+    if cfg.get("sprint_id"):
+        # Yunxiao's CreateWorkitem API calls the required iteration field
+        # "sprint". The value is the Yunxiao sprint/iteration ID.
+        payload["sprint"] = cfg["sprint_id"]
+    if cfg.get("participant_ids"):
+        payload["participants"] = cfg["participant_ids"]
 
     github_labels = [
         label["name"]
@@ -504,6 +544,14 @@ def sync_one(
 
 
 def configuration_from_environment(client: YunxiaoClient) -> dict[str, Any]:
+    participant_names = tuple(
+        name.strip()
+        for name in os.environ.get(
+            "YUNXIAO_PARTICIPANT_NAMES",
+            ",".join(DEFAULT_PARTICIPANT_NAMES),
+        ).split(",")
+        if name.strip()
+    )
     return preflight(
         required_env("YUNXIAO_PROJECT_ID"),
         required_env("YUNXIAO_PROJECT_NAME"),
@@ -525,6 +573,8 @@ def configuration_from_environment(client: YunxiaoClient) -> dict[str, Any]:
         ).strip()
         or DEFAULT_PRIORITY_NAME,
         parent_id=os.environ.get("YUNXIAO_PARENT_ID", "").strip() or None,
+        sprint_id=os.environ.get("YUNXIAO_SPRINT_ID", "").strip() or None,
+        participant_names=participant_names,
     )
 
 
@@ -570,6 +620,14 @@ def handle_event(client: YunxiaoClient) -> int:
     repository = repository_name(
         event.get("repository", {}).get("full_name") or os.environ.get("GITHUB_REPOSITORY")
     )
+    if item_type == "pr" and not should_sync_pull_request(item):
+        association = str(item.get("author_association") or "").strip().upper() or "UNKNOWN"
+        print(
+            f"{repository} pr #{item['number']}: skipped internal author_association={association}",
+            file=sys.stderr,
+        )
+        return 0
+
     cfg = configuration_from_environment(client)
     all_labels = {
         label["name"]
@@ -626,9 +684,14 @@ def backfill(client: YunxiaoClient, *, apply: bool, state: str) -> int:
     github_token = os.environ.get("GH_TOKEN", "").strip()
     repository = repository_name(os.environ.get("GITHUB_REPOSITORY"))
     issues_raw = github_collection(repository, "issues", state=state, token=github_token)
-    prs = github_collection(repository, "pulls", state=state, token=github_token)
+    prs_raw = github_collection(repository, "pulls", state=state, token=github_token)
     issues = [item for item in issues_raw if "pull_request" not in item]
-    print(f"GitHub: {len(issues)} {state} issues, {len(prs)} {state} PRs", file=sys.stderr)
+    prs = [item for item in prs_raw if should_sync_pull_request(item)]
+    print(
+        f"GitHub: {len(issues)} {state} issues, {len(prs)} external {state} PRs "
+        f"(skipped {len(prs_raw) - len(prs)} internal PRs)",
+        file=sys.stderr,
+    )
 
     cfg = configuration_from_environment(client)
     all_labels: set[str] = set()
@@ -714,6 +777,8 @@ def main() -> int:
                     "org": result["org"],
                     "project_id": result["project_id"],
                     "parent_id": result["parent_id"],
+                    "sprint_id": result["sprint_id"],
+                    "participant_ids": result["participant_ids"],
                     "workitem_category": result["workitem_category"],
                     "type_id": result["type_id"],
                     "type_name": result["type_name"],

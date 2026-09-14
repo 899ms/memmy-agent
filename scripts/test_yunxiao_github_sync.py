@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).with_name("yunxiao_github_sync.py")
@@ -38,6 +42,59 @@ class YunxiaoSyncTests(unittest.TestCase):
             "已取消",
         )
 
+    def test_only_community_pull_requests_are_synced(self) -> None:
+        for association in (
+            "CONTRIBUTOR",
+            "FIRST_TIMER",
+            "FIRST_TIME_CONTRIBUTOR",
+            "NONE",
+            "contributor",
+        ):
+            self.assertTrue(
+                MODULE.should_sync_pull_request(
+                    {"author_association": association}
+                )
+            )
+
+    def test_internal_pull_request_event_skips_before_cloud_api_calls(self) -> None:
+        event = {
+            "action": "opened",
+            "repository": {"full_name": "MemTensor/memmy-agent"},
+            "pull_request": {
+                "number": 99,
+                "title": "Internal change",
+                "state": "open",
+                "author_association": "MEMBER",
+            },
+        }
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".json",
+        ) as event_file:
+            json.dump(event, event_file)
+            event_file.flush()
+            with (
+                patch.dict(
+                    os.environ,
+                    {"GITHUB_EVENT_PATH": event_file.name},
+                    clear=False,
+                ),
+                patch.object(
+                    MODULE,
+                    "configuration_from_environment",
+                    side_effect=AssertionError("internal PR must not call Yunxiao"),
+                ),
+            ):
+                self.assertEqual(MODULE.handle_event(object()), 0)
+
+        for association in ("OWNER", "MEMBER", "COLLABORATOR", "MANNEQUIN", ""):
+            self.assertFalse(
+                MODULE.should_sync_pull_request(
+                    {"author_association": association}
+                )
+            )
+
     def test_resolve_statuses_accepts_memmy_workflow_names(self) -> None:
         workflow = [
             {"id": "pending", "name": "待处理"},
@@ -54,7 +111,7 @@ class YunxiaoSyncTests(unittest.TestCase):
             },
         )
 
-    def test_create_payload_contains_parent(self) -> None:
+    def test_create_payload_contains_parent_and_sprint(self) -> None:
         calls = []
 
         def transport(method, path, body=None):
@@ -70,6 +127,8 @@ class YunxiaoSyncTests(unittest.TestCase):
             "assignee_id": "assignee",
             "priority_id": "priority",
             "parent_id": "directory",
+            "sprint_id": "sprint",
+            "participant_ids": ["participant-a", "participant-b"],
             "statuses": {"待处理": "pending", "已取消": "cancelled"},
         }
         item = {
@@ -95,6 +154,8 @@ class YunxiaoSyncTests(unittest.TestCase):
         )
         self.assertEqual(result, "created")
         self.assertEqual(calls[2][2]["parentId"], "directory")
+        self.assertEqual(calls[2][2]["sprint"], "sprint")
+        self.assertEqual(calls[2][2]["participants"], ["participant-a", "participant-b"])
         self.assertIn("Details", calls[2][2]["description"])
 
     def test_reopened_item_updates_to_pending(self) -> None:
@@ -113,6 +174,8 @@ class YunxiaoSyncTests(unittest.TestCase):
             "assignee_id": "assignee",
             "priority_id": "priority",
             "parent_id": "",
+            "sprint_id": "",
+            "participant_ids": ["participant-a", "participant-b"],
             "statuses": {"待处理": "pending", "已取消": "cancelled"},
         }
         result = MODULE.sync_one(
@@ -135,7 +198,14 @@ class YunxiaoSyncTests(unittest.TestCase):
             client=MODULE.YunxiaoClient(transport),
         )
         self.assertEqual(result, "updated-status")
-        self.assertEqual(calls[-1][2], {"status": "pending"})
+        self.assertEqual(
+            calls[-1][2],
+            {
+                "status": "pending",
+                "assignedTo": "assignee",
+                "participants": ["participant-a", "participant-b"],
+            },
+        )
 
     def test_all_state_backfill_can_create_closed_item(self) -> None:
         calls = []
@@ -153,6 +223,8 @@ class YunxiaoSyncTests(unittest.TestCase):
             "assignee_id": "assignee",
             "priority_id": "priority",
             "parent_id": "",
+            "sprint_id": "",
+            "participant_ids": [],
             "statuses": {"待处理": "pending", "已取消": "cancelled"},
         }
         result = MODULE.sync_one(
