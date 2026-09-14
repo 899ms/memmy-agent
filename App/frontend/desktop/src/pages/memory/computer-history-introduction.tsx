@@ -1,4 +1,4 @@
-import { ArrowRight, BrainCircuit, Check, History, MessageCircle, Monitor, ShieldCheck, Sparkles, X } from "lucide-react";
+import { FileText, Globe, History, MessageCircle, Monitor, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
@@ -130,35 +130,32 @@ export function ComputerHistoryIntroduction(props: {
       <section ref={dialog} className="chi-dialog" role="dialog" aria-modal="true" aria-labelledby="chi-title" aria-describedby="chi-description" tabIndex={-1} onKeyDown={trapFocus}>
         <button className="chi-close" type="button" aria-label={t("historyIntro.close")} disabled={busy} onClick={close}><X size={21} /></button>
         <div className="chi-copy">
-          <p className="chi-eyebrow">{t("historyIntro.eyebrow")}</p>
           <h2 id="chi-title">{t("historyIntro.titleFirst")}<br />{t("historyIntro.titleSecond")}</h2>
           <p id="chi-description" className="chi-description">{t("historyIntro.description")}</p>
           <div className="chi-controls">
             <div className="chi-control">
               <span className="chi-control__icon chi-control__icon--history"><History size={18} /></span>
-              <span><strong>{t("historyIntro.record")}</strong><small>{t(state === "paused" ? "historyIntro.recordPaused" : "historyIntro.recordDetail")}</small></span>
+              <span><strong>{t("historyIntro.record")}</strong>{state === "paused" ? <small>{t("historyIntro.recordPaused")}</small> : null}</span>
               <button className="chi-switch" role="switch" type="button" aria-checked={recording} aria-label={t("historyIntro.record")} disabled={!loaded || busy}
                 onClick={() => setRecording((value) => !value)}><span /></button>
             </div>
           </div>
-          <p className="chi-dependency">{t("historyIntro.controlHint")}</p>
-          <p className="chi-privacy"><ShieldCheck size={15} /><span>{t("historyIntro.privacy")}</span></p>
-          <details className="chi-scope"><summary>{t("historyIntro.captureScope")}</summary><p>{t("computerHistory.info")}</p></details>
+          <details className="chi-scope"><summary>{t("historyIntro.captureScope")}</summary><p>{t("historyIntro.privacy")}</p><p>{t("computerHistory.info")}</p></details>
           {error ? <p className="chi-error" role="alert">{error}{!loaded ? <button type="button" onClick={() => setReload((value) => value + 1)}>{t("historyIntro.retryLoad")}</button> : null}</p> : null}
           <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
           <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
-          <div className="chi-flow" aria-hidden>
-            <span><Monitor size={35} strokeWidth={1.6} /></span><i /><span className="chi-flow__brain"><BrainCircuit size={39} strokeWidth={1.5} /></span><i /><span><MessageCircle size={33} strokeWidth={1.6} /></span>
+          <div className="chi-question">
+            <MessageCircle size={24} strokeWidth={1.6} aria-hidden />
+            <span>{t("historyIntro.exampleQuestion")}</span>
           </div>
-          <div className="chi-explainer">
-            <div className="chi-explainer__label">{t("historyIntro.howItWorks")}</div>
-            <div className="chi-step"><span className="chi-step__symbol"><Monitor size={20} /></span><div><h3>{t("historyIntro.stepObserve")}</h3><p>{t("historyIntro.stepObserveDetail")}</p></div><ArrowRight size={16} /></div>
-            <div className="chi-step"><span className="chi-step__symbol chi-step__symbol--brain"><Sparkles size={20} /></span><div><h3>{t("historyIntro.stepUnderstand")}</h3><p>{t("historyIntro.stepUnderstandDetail")}</p></div><ArrowRight size={16} /></div>
-            <div className="chi-step"><span className="chi-step__symbol chi-step__symbol--recall"><MessageCircle size={20} /></span><div><h3>{t("historyIntro.stepRecall")}</h3><p>{t("historyIntro.stepRecallDetail")}</p></div><Check size={16} /></div>
+          <div className="chi-history-illustration" aria-hidden>
+            <div className="chi-history-heading"><History size={19} /><span>{t("historyIntro.exampleRecord")}</span></div>
+            <div className="chi-history-line"><span><Monitor size={19} /></span><i /><b /></div>
+            <div className="chi-history-line"><span><Globe size={19} /></span><i /><b /></div>
+            <div className="chi-history-line"><span><FileText size={19} /></span><i /><b /></div>
           </div>
-          <p className="chi-visual__caption">{t("historyIntro.caption")}</p>
         </div>
       </section>
     </div>, document.body,
