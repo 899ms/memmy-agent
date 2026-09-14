@@ -29,6 +29,7 @@ export const unavailableSettings = (
   serviceAvailable: false,
   enabled: false,
   bases: [],
+  maxBases: 10,
 });
 
 /** Sends only a user's Memmy login credential to the developer-configured backend. */
@@ -177,6 +178,7 @@ export function parseSettings(input: unknown): KnowledgeSettings {
   if (
     typeof data.enabled !== "boolean" ||
     typeof data.serviceAvailable !== "boolean" ||
+    typeof data.maxBases !== "number" ||
     !Array.isArray(data.bases)
   )
     throw new KnowledgeError("知识库服务返回格式无效", 502);
@@ -184,6 +186,7 @@ export function parseSettings(input: unknown): KnowledgeSettings {
     authenticated: data.authenticated === true,
     enabled: data.enabled,
     serviceAvailable: data.serviceAvailable,
+    maxBases: Math.max(0, Math.floor(data.maxBases)),
     bases: data.bases.map((value) => {
       const base = record(value);
       return {

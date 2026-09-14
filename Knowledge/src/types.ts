@@ -11,6 +11,7 @@ export interface KnowledgeSettings {
   enabled: boolean;
   bases: KnowledgeBase[];
   serviceAvailable: boolean;
+  maxBases?: number;
 }
 export interface KnowledgeFile {
   id: string;
