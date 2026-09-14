@@ -45,11 +45,63 @@ beforeEach(() => {
 });
 afterEach(async () => {
   for (const service of services.splice(0)) await service.shutdown();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe("repairing historical six-hour aggregation", () => {
+  it("waits for the six-hour window to close before preparing or narrating its final rollup", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(start.getTime() + 6 * 60 * 60_000 - 1));
+    const id = seed(10);
+    const model = vi.fn(async () => response());
+    const service = serviceAt();
+    service.setLlmRuntime(runtime(model));
+
+    expect(await service.backfillUnwrittenSummaries()).toBe(0);
+    expect(model).not.toHaveBeenCalled();
+    expect(fs.existsSync(historyFile(rollupId))).toBe(false);
+    expect(service.snapshot().histories.map((entry) => entry.id)).toEqual([id]);
+
+    vi.setSystemTime(new Date(start.getTime() + 6 * 60 * 60_000));
+    expect(await service.backfillUnwrittenSummaries()).toBe(1);
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(service.snapshot().histories.find((entry) => entry.id === rollupId)?.coveredHistoryIds).toEqual([id]);
+  });
+
+  it("hides a partial rollup left by an older version until its window closes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(start.getTime() + 60 * 60_000));
+    const id = seed(10);
+    legacy(rollupId, [id]);
+    const service = serviceAt();
+
+    expect(service.snapshot().histories.map((entry) => entry.id)).toEqual([id]);
+    vi.setSystemTime(new Date(start.getTime() + 6 * 60 * 60_000));
+    expect(service.snapshot().histories.map((entry) => entry.id)).toContain(rollupId);
+  });
+
+  it("waits for every ten-minute source before making the closed-window model call", async () => {
+    const first = seed(10);
+    const second = seed(20);
+    fs.writeFileSync(historyFile(second), fs.readFileSync(historyFile(second), "utf8")
+      .replace("summary_state: ready", "summary_state: pending"));
+    let resolveSource!: (value: { content: string }) => void;
+    const sourceNarration = new Promise<{ content: string }>((resolve) => { resolveSource = resolve; });
+    const model = vi.fn(async () => model.mock.calls.length === 1 ? sourceNarration : response("Final window"));
+    const service = serviceAt();
+    service.setLlmRuntime(runtime(model));
+
+    await vi.waitFor(() => expect(model).toHaveBeenCalledTimes(1));
+    expect(fs.existsSync(historyFile(rollupId))).toBe(false);
+    resolveSource(response("Recovered source"));
+    expect(await service.backfillUnwrittenSummaries()).toBe(2);
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(service.snapshot().histories.find((entry) => entry.id === rollupId)?.coveredHistoryIds)
+      .toEqual([first, second]);
+  });
+
   it("backfills missing rollups from already-ready captures without renarrating them or churning on restart", async () => {
     const ids = [seed(10), seed(20), seed(30)];
     const original = ids.map((id) => fs.readFileSync(historyFile(id), "utf8"));

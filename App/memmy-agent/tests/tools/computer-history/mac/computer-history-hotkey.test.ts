@@ -46,11 +46,11 @@ console.log('recording written: '+file);
       if (hasEarlierSummary) expect(service.snapshot().histories.find((entry) => entry.id === id)?.title).toBe("Early work");
       resolveNarration(response);
       await vi.waitFor(() => expect(service.snapshot().histories.find((entry) => entry.id === id)?.title).toBe("Finished work"));
-      await vi.waitFor(() => expect(service.snapshot().histories.some((entry) => entry.summaryWindow === "6h")).toBe(true));
+      expect(service.snapshot().histories.some((entry) => entry.summaryWindow === "6h")).toBe(false);
       expect(fs.readFileSync(file, "utf8")).toContain("capture_complete: true");
       expect(fs.existsSync(`${file}.staging`)).toBe(false);
       await service.backfillUnwrittenSummaries();
-      expect(chat).toHaveBeenCalledTimes(2); // One final segment, one derived rollup.
+      expect(chat).toHaveBeenCalledTimes(1); // The open six-hour window is not narrated incrementally.
     } finally {
       resolveNarration(response);
       await service.shutdown();
