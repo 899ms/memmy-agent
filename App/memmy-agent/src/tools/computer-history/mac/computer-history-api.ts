@@ -1839,7 +1839,7 @@ function buildRecordedExperienceWorkflow(input: {
     "## Execution contract",
     "",
     "1. Start by stating the current request, the source History title, and the safety boundary inferred from the request.",
-    "2. Prefer the Open Computer Use MCP tools `mcp_open_computer_use_list_apps`, `mcp_open_computer_use_get_app_state`, `mcp_open_computer_use_click`, `mcp_open_computer_use_type_text`, `mcp_open_computer_use_press_key`, and `mcp_open_computer_use_scroll`. Use built-in `computer_*` tools only if the MCP tools are unavailable; never mix executors within one gate and do not start a CUA subprocess.",
+    "2. Use only the Open Computer Use MCP tools `mcp_open_computer_use_list_apps`, `mcp_open_computer_use_get_app_state`, `mcp_open_computer_use_click`, `mcp_open_computer_use_type_text`, `mcp_open_computer_use_press_key`, and `mcp_open_computer_use_scroll`. If these tools are unavailable, stop and report the workflow as blocked; never substitute another desktop executor.",
     "3. Execute the gates below strictly in order. Maintain a visible checklist such as `G1 verified / G2 pending`; never search for a later action while an earlier gate is unresolved.",
     "4. Start with `list_apps` and `get_app_state`. Open Computer Use action tools return refreshed post-action state; use that result as verification evidence instead of immediately calling `get_app_state` again. Read state again only after an out-of-band UI change or when the action result lacks the evidence needed for the next gate.",
     "5. Element indexes are state-scoped. Use only an `element_index` from the latest returned state, and never reuse an index after a click, key action, scroll, navigation, modal change, or page reload.",
