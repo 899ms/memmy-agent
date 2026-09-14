@@ -1,5 +1,7 @@
 # Trace → Skill 直连规格
 
+**PR 范围：** 在现有 L1 → L2 → `skill_crystallization` 之外，并行加一条 RawTurn → Skill 链。旧链的触发、门槛、证据打包一律不改；新链不替换、不短路 L2 毕业 Skill。两条链 `source` 不同，第一期不去重、不合并。评测 replay / serve 脚本不在本仓库。
+
 新建一条 **RawTurn → Skill** 链路，不经过 L2 诱导，也不用 L1 summary 当生成正文。
 
 **旧链原样保留：** L1 → L2 → `skill_crystallization` 的触发、门槛、证据打包一律不改。新链只在 reward 之后**并行加** assign / evolve，不替换、不短路 L2 毕业 Skill。

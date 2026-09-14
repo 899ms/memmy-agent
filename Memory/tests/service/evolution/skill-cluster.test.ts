@@ -51,7 +51,7 @@ function createDirectSkillLlm(calls: Array<{ operation: string }>): LlmClient {
       return "{}";
     },
     async completeJson<T extends Record<string, unknown>>(
-      _messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+      messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
       options: { operation: string }
     ): Promise<T> {
       calls.push({ operation: options.operation });
@@ -65,8 +65,14 @@ function createDirectSkillLlm(calls: Array<{ operation: string }>): LlmClient {
         return { ...DIRECT_SKILL_JSON } as unknown as T;
       }
       if (options.operation === "capture.summarize") {
+        const payload = messages.find((message) => message.role === "user")?.content ?? "";
+        const turnSummary = payload.match(/\bUSER:\s*(.*?)\s+ASSISTANT:/)?.[1]?.trim()
+          ?? "filled report.xlsx";
         return {
-          l1: { summary: "filled report.xlsx", evidence: [] },
+          l1: {
+            summary: turnSummary,
+            evidence: [{ quote: turnSummary, role: "user", kind: "task_outcome" }]
+          },
           user: null
         } as unknown as T;
       }
@@ -156,6 +162,96 @@ describe("MemoryService / evolution / skill cluster", () => {
     };
     expect(cluster.skill_memory_id).toBe(skill!.id);
     expect(cluster.meta_skill_md).toContain("anti_pattern");
+  });
+
+  it("enqueues assign/evolve after episode reward without a manual skill job", async () => {
+    const calls: Array<{ operation: string }> = [];
+    const { db, service } = createTestService({
+      llm: createDirectSkillLlm(calls),
+      config: {
+        ...DEFAULT_MEMMY_CONFIG,
+        algorithm: {
+          ...DEFAULT_MEMMY_CONFIG.algorithm,
+          capture: {
+            ...DEFAULT_MEMMY_CONFIG.algorithm.capture,
+            synthReflection: false,
+            embedAfterCapture: false,
+            alphaScoring: false
+          },
+          l2Induction: {
+            ...DEFAULT_MEMMY_CONFIG.algorithm.l2Induction,
+            useLlm: false
+          },
+          l3Abstraction: {
+            ...DEFAULT_MEMMY_CONFIG.algorithm.l3Abstraction,
+            useLlm: false
+          },
+          skill: {
+            ...DEFAULT_MEMMY_CONFIG.algorithm.skill,
+            useLlm: true,
+            directFromTrace: true
+          }
+        }
+      }
+    });
+    const userId = "direct-from-reward";
+    const session = service.openSession({
+      namespace: { source: "codex", profileId: "jiang", userId }
+    });
+    const complete = service.completeTurn(`${userId}-turn`, {
+      sessionId: session.sessionId,
+      episodeId: `${userId}-episode`,
+      query: "fill totals in report.xlsx with python openpyxl",
+      answer: "Opened report.xlsx with openpyxl and wrote the totals.",
+      toolCalls: [{
+        name: "python",
+        input: { command: "openpyxl.load_workbook('report.xlsx')" },
+        output: { ok: true },
+        success: true
+      }]
+    });
+    await service.feedback({
+      sessionId: session.sessionId,
+      episodeId: complete.episodeId,
+      l1MemoryId: complete.l1MemoryId,
+      channel: "explicit",
+      polarity: "positive",
+      magnitude: 1,
+      rationale: "accepted"
+    });
+    service.closeSession(session.sessionId);
+    expect(db.db.prepare(
+      `SELECT COUNT(*) AS count
+       FROM evolution_jobs
+       WHERE job_type IN ('skill_cluster_assign', 'skill_batch_evolve')`
+    ).get()).toEqual({ count: 0 });
+    await runWorkerRounds(service, 8, 50);
+    const jobs = db.db.prepare(
+      `SELECT job_type, status
+       FROM evolution_jobs
+       WHERE job_type IN ('skill_cluster_assign', 'skill_batch_evolve')
+       ORDER BY created_at`
+    ).all() as Array<{ job_type: string; status: string }>;
+    const rewarded = db.db.prepare(
+      `SELECT r_task FROM episodes WHERE id = ?`
+    ).get(complete.episodeId) as { r_task: number | null };
+    expect(rewarded.r_task).toBe(1);
+    expect(jobs.map((job) => job.job_type)).toEqual([
+      "skill_cluster_assign",
+      "skill_batch_evolve"
+    ]);
+    expect(jobs.every((job) => job.status === "succeeded")).toBe(true);
+    const skill = db.db.prepare(
+      `SELECT id, properties_json
+       FROM memories
+       WHERE memory_layer = 'Skill'`
+    ).get() as { id: string; properties_json: string } | undefined;
+    expect(skill).toBeTruthy();
+    const properties = JSON.parse(skill!.properties_json) as {
+      internal_info?: { source?: string };
+    };
+    expect(properties.internal_info?.source).toBe(DIRECT_SKILL_SOURCE);
+    expect(calls.map((item) => item.operation)).toContain("skill.batch_evolve.crystallize");
   });
 
   it("does not create a Skill from failure-only evidence", async () => {
