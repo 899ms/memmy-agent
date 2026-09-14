@@ -5,6 +5,7 @@ import {
   buildSixHourSummary,
   instantFromId,
   isLocalSixHourWindow,
+  isSixHourWindowClosed,
   rollupCoveredHistoryIds,
   sixHourWindowStart,
   summariesInWindow,
@@ -126,6 +127,12 @@ describe("layered summaries", () => {
     }
     expect([...starts].map((time) => new Date(time).getHours())).toEqual([0, 6, 12, 18]);
     expect(isLocalSixHourWindow(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 2))).toBe(false);
+  });
+
+  it("closes a six-hour window only when its full duration has elapsed", () => {
+    const start = new Date(2026, 8, 11, 6);
+    expect(isSixHourWindowClosed(start, new Date(start.getTime() + SIX_HOUR_MS - 1))).toBe(false);
+    expect(isSixHourWindowClosed(start, new Date(start.getTime() + SIX_HOUR_MS))).toBe(true);
   });
 
   it("selects only the ten-minute summaries inside the window", () => {
