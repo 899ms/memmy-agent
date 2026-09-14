@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 import { createPortal } from "react-dom";
 import type { ComputerHistorySnapshot, MemmyAgentClient } from "../../api/memmy-agent-client.js";
 import { useTranslation } from "../../i18n/use-translation.js";
+import { ComputerHistoryRecordingConfirmation } from "./computer-history-recording-confirmation.js";
 import "./computer-history-introduction.css";
 
 export const HISTORY_INTRO_SEEN_KEY = "memmy.computerHistoryIntroduction.v2";
@@ -55,14 +56,19 @@ export function ComputerHistoryIntroduction(props: {
   const [initial, setInitial] = useState(false);
   const [state, setState] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const dialog = useRef<HTMLElement>(null);
+  const applyButton = useRef<HTMLButtonElement>(null);
+  const restoreApplyFocus = useRef(false);
+  const confirmationOpenRef = useRef(false);
+  confirmationOpenRef.current = confirmationOpen;
   const alive = useRef(true);
   const busyRef = useRef(false);
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
-  const close = useCallback(() => { if (!busyRef.current) onCloseRef.current(); }, []);
+  const close = useCallback(() => { if (!busyRef.current && !confirmationOpenRef.current) onCloseRef.current(); }, []);
   const explainError = useCallback((cause: unknown) => {
     const value = cause instanceof Error ? cause.message : String(cause);
     if (value === "Recording state did not match the requested setting.") return t("historyIntro.stateMismatch");
@@ -77,6 +83,7 @@ export function ComputerHistoryIntroduction(props: {
     document.body.style.overflow = "hidden";
     dialog.current?.focus();
     const onKey = (event: globalThis.KeyboardEvent) => {
+      if (confirmationOpenRef.current) return;
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
     };
     document.addEventListener("keydown", onKey, true);
@@ -87,6 +94,16 @@ export function ComputerHistoryIntroduction(props: {
       if (previous?.isConnected) previous.focus();
     };
   }, [close]);
+
+  useEffect(() => {
+    if (confirmationOpen || !restoreApplyFocus.current) return;
+    if (busy) {
+      dialog.current?.focus();
+      return;
+    }
+    restoreApplyFocus.current = false;
+    applyButton.current?.focus();
+  }, [confirmationOpen, busy]);
 
   useEffect(() => {
     let active = true;
@@ -122,12 +139,25 @@ export function ComputerHistoryIntroduction(props: {
       if (alive.current) setBusy(false);
     }
   };
+  const requestApply = () => {
+    if (!loaded || busyRef.current || confirmationOpenRef.current) return;
+    if (recording && initial !== recording) {
+      setConfirmationOpen(true);
+      return;
+    }
+    void apply();
+  };
+  const dismissConfirmation = () => {
+    restoreApplyFocus.current = true;
+    setConfirmationOpen(false);
+  };
   const cta = busy ? "historyIntro.applying" : !loaded ? error ? "historyIntro.unavailable" : "historyIntro.loading"
     : initial === recording ? "historyIntro.understood" : recording ? "historyIntro.begin" : "historyIntro.save";
 
   return createPortal(
+    <>
     <div className="chi-backdrop" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
-      <section ref={dialog} className="chi-dialog" role="dialog" aria-modal="true" aria-labelledby="chi-title" aria-describedby="chi-description" tabIndex={-1} onKeyDown={trapFocus}>
+      <section ref={dialog} className="chi-dialog" role="dialog" aria-modal={confirmationOpen ? undefined : true} aria-hidden={confirmationOpen ? true : undefined} inert={confirmationOpen ? true : undefined} aria-labelledby="chi-title" aria-describedby="chi-description" tabIndex={-1} onKeyDown={confirmationOpen ? undefined : trapFocus}>
         <button className="chi-close" type="button" aria-label={t("historyIntro.close")} disabled={busy} onClick={close}><X size={21} /></button>
         <div className="chi-copy">
           <h2 id="chi-title">{t("historyIntro.title")}</h2>
@@ -141,14 +171,23 @@ export function ComputerHistoryIntroduction(props: {
             </div>
           </div>
           {error ? <p className="chi-error" role="alert">{error}{!loaded ? <button type="button" onClick={() => setReload((value) => value + 1)}>{t("historyIntro.retryLoad")}</button> : null}</p> : null}
-          <button className="chi-primary" type="button" disabled={!loaded || busy} onClick={() => void apply()}>{t(cta)}</button>
+          <button ref={applyButton} className="chi-primary" type="button" disabled={!loaded || busy} onClick={requestApply}>{t(cta)}</button>
         </div>
         <div className="chi-visual" aria-label={t("historyIntro.diagramLabel")}>
           <div className="chi-orb chi-orb--one" /><div className="chi-orb chi-orb--two" />
           <HistoryExamples />
         </div>
       </section>
-    </div>, document.body,
+    </div>
+    <ComputerHistoryRecordingConfirmation
+      open={confirmationOpen}
+      onCancel={dismissConfirmation}
+      onConfirm={() => {
+        dismissConfirmation();
+        void apply();
+      }}
+    />
+    </>, document.body,
   );
 }
 

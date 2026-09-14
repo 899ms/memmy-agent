@@ -78,7 +78,7 @@ describe("ComputerHistorySubPage", () => {
       root.render(page(client));
     });
 
-    expect(container.textContent).toContain("开始记录");
+    expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
     // The timeline reads as a summary: each entry carries its own account.
     expect(container.textContent).toContain("You opened Notes and drafted a short entry.");
     expect(container.textContent).toContain("Workflow");
@@ -432,14 +432,149 @@ describe("ComputerHistorySubPage", () => {
     const getComputerHistory = vi.fn().mockResolvedValue(initial);
     await renderWith(initial, { getComputerHistory, stopComputerHistoryObservation: vi.fn().mockReturnValue(stop.promise) });
 
-    act(() => { container.querySelector<HTMLButtonElement>(".ch__button--recording")?.click(); });
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("true");
+    act(() => { recordingSwitch?.click(); });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(recordingSwitch?.disabled).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(4500); });
     expect(getComputerHistory).toHaveBeenCalledTimes(1);
     await act(async () => { stop.resolve(snapshot()); });
-    expect(container.textContent).toContain("开始记录");
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(recordingSwitch?.disabled).toBe(false);
     getComputerHistory.mockResolvedValue(snapshot());
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(getComputerHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for the recorder to start before turning the switch on and prevents duplicate starts", async () => {
+    const start = deferred<ComputerHistorySnapshot>();
+    const startComputerHistoryObservation = vi.fn().mockReturnValue(start.promise);
+    await renderWith(snapshot(), { startComputerHistoryObservation });
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+
+    act(() => { recordingSwitch?.click(); });
+    expect(startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("开启计算机使用记录？");
+    expect(dialog?.textContent).toContain("大模型");
+    expect(dialog?.textContent).toContain("本机");
+    expect(dialog?.textContent).toContain("关闭");
+
+    act(() => { confirmationButton()?.click(); });
+    expect(recordingSwitch?.disabled).toBe(true);
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    act(() => { recordingSwitch?.click(); });
+    expect(startComputerHistoryObservation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      start.resolve(snapshot({ observation: { ...snapshot().observation, state: "running" } }));
+    });
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("true");
+    expect(recordingSwitch?.disabled).toBe(false);
+  });
+
+  it.each(["cancel", "escape"] as const)("does not start recording when the confirmation is dismissed with %s", async (dismiss) => {
+    const client = await renderWith(snapshot());
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    act(() => { recordingSwitch?.click(); });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+
+    act(() => {
+      if (dismiss === "cancel") {
+        [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .find((button) => button.textContent === "返回")?.click();
+      } else {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      }
+    });
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(recordingSwitch?.disabled).toBe(false);
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(client.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(client.stopComputerHistoryObservation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the switch off after a failed start and lets the user retry", async () => {
+    const start = deferred<ComputerHistorySnapshot>();
+    const startComputerHistoryObservation = vi.fn().mockReturnValueOnce(start.promise)
+      .mockResolvedValue(snapshot({ observation: { ...snapshot().observation, state: "running" } }));
+    await renderWith(snapshot(), { startComputerHistoryObservation });
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    act(() => { recordingSwitch?.click(); });
+    expect(startComputerHistoryObservation).not.toHaveBeenCalled();
+    act(() => { confirmationButton()?.click(); });
+    expect(recordingSwitch?.disabled).toBe(true);
+
+    await act(async () => { start.reject(new Error("recorder could not start")); });
+    expect(container.textContent).toContain("recorder could not start");
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(recordingSwitch?.disabled).toBe(false);
+
+    await act(async () => { recordingSwitch?.click(); });
+    expect(startComputerHistoryObservation).toHaveBeenCalledTimes(1);
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => { confirmationButton()?.click(); });
+    expect(startComputerHistoryObservation).toHaveBeenCalledTimes(2);
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).not.toContain("recorder could not start");
+  });
+
+  it.each(["resume", "stop"] as const)("can %s a paused recording without starting a new session", async (action) => {
+    const initial = snapshot({ observation: { ...snapshot().observation, state: "paused" } });
+    const resumed = snapshot({ observation: { ...initial.observation, state: "running" } });
+    const client = await renderWith(initial, {
+      resumeComputerHistoryObservation: vi.fn().mockResolvedValue(resumed),
+      stopComputerHistoryObservation: vi.fn().mockResolvedValue(snapshot()),
+    });
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "恢复记录");
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("true");
+    expect(resume).toBeDefined();
+
+    await act(async () => { (action === "resume" ? resume : recordingSwitch)?.click(); });
+    if (action === "resume") {
+      expect(client.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+      expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      await act(async () => { confirmationButton()?.click(); });
+    } else {
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    }
+
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(client.resumeComputerHistoryObservation).toHaveBeenCalledTimes(action === "resume" ? 1 : 0);
+    expect(client.stopComputerHistoryObservation).toHaveBeenCalledTimes(action === "stop" ? 1 : 0);
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe(action === "resume" ? "true" : "false");
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "恢复记录")).toBe(false);
+  });
+
+  it("keeps a paused recording paused when its resume confirmation is cancelled", async () => {
+    const initial = snapshot({ observation: { ...snapshot().observation, state: "paused" } });
+    const client = await renderWith(initial);
+    const resume = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "恢复记录");
+    act(() => { resume?.click(); });
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(client.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+
+    act(() => {
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .find((button) => button.textContent === "返回")?.click();
+    });
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+    expect([...container.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.textContent === "恢复记录")).toBe(true);
+    expect(client.resumeComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(client.startComputerHistoryObservation).not.toHaveBeenCalled();
+    expect(client.stopComputerHistoryObservation).not.toHaveBeenCalled();
   });
 
   it("shows asynchronous recording and narration failures until the backend recovers", async () => {
@@ -449,6 +584,9 @@ describe("ComputerHistorySubPage", () => {
     await renderWith(initial, { getComputerHistory });
     expect(container.textContent).toContain("记录失败：recorder exited");
     expect(container.textContent).toContain("摘要生成失败：model unavailable");
+    const recordingSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
+    expect(recordingSwitch?.disabled).toBe(false);
 
     getComputerHistory.mockResolvedValue(snapshot());
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
@@ -484,6 +622,11 @@ describe("ComputerHistorySubPage", () => {
     expect(client.deleteComputerHistory).not.toHaveBeenCalled();
   });
 });
+
+function confirmationButton() {
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+    .find((button) => button.textContent === "确认开启");
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
