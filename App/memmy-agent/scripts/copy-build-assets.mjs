@@ -17,6 +17,9 @@ const staleFiles = [
   ...compiled("dist/core/agent-runtime/tools/computer-history"),
   ...compiled("dist/core/agent-runtime/tools/computer-history-settings"),
   ...compiled("dist/core/agent-runtime/tools/computer"),
+  // Replay from a History was removed; the build copies assets but never
+  // deletes one that is gone from src/.
+  "dist/tools/computer-use/replay-cua.sh",
 ];
 
 for (const target of staleDirectories) fs.rmSync(target, { recursive: true, force: true });

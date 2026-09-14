@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ComputerHistoryDemoService } from "../../../../src/tools/computer-history/mac/computer-history-api.js";
+import { ComputerHistoryDemoService, clientSnapshot } from "../../../../src/tools/computer-history/mac/computer-history-api.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -291,8 +291,8 @@ describe("ComputerHistoryDemoService", () => {
 
     expect(fs.readFileSync(historyFile, "utf8")).toBe(standing);
     expect(service.snapshot().histories.map((entry) => entry.title)).toContain("What the model wrote");
-    // The staged rewrite is cleaned up rather than left beside the summary.
-    expect(fs.existsSync(`${historyFile}.staging`)).toBe(false);
+    // Keep the replacement evidence for retry while the standing account stays visible.
+    expect(fs.existsSync(`${historyFile}.staging`)).toBe(true);
   });
 
   it("dates a summary by the window it covers, not by when it was last written", () => {
@@ -326,7 +326,7 @@ describe("ComputerHistoryDemoService", () => {
     expect(histories.map((entry) => entry.title)).toEqual(["The later window", "The earlier window"]);
   });
 
-  it("rebuilds six-hour summaries cut on the old epoch-aligned windows", () => {
+  it("prepares local replacements without discarding an old account whose source coverage is unknown", () => {
     const { service, root } = createService();
     const historyDirectory = path.join(root, "histories");
     fs.mkdirSync(historyDirectory, { recursive: true });
@@ -340,6 +340,7 @@ describe("ComputerHistoryDemoService", () => {
       'title: "A morning window"',
       "source_type: captured",
       "summary_state: ready",
+      "status: completed",
       "---",
       "",
       "body",
@@ -356,12 +357,83 @@ describe("ComputerHistoryDemoService", () => {
       "",
     ].join("\n"), "utf8");
 
-    expect(service.realignRollups()).toBe(1);
+    expect(service.realignRollups()).toBe(0);
 
     const rollups = fs.readdirSync(historyDirectory).filter((name) => name.endsWith("-6h-summary.md"));
-    expect(rollups).toEqual([`${idOf(new Date(2026, 8, 11, 6))}-6h-summary.md`]);
-    // Nothing is left to realign, so starting again does not churn.
+    expect(rollups).toEqual([
+      `${idOf(misaligned)}-6h-summary.md`,
+      `${idOf(new Date(2026, 8, 11, 6))}-6h-summary.md`,
+    ].sort());
+    // The old account is retained, but preparing again does not churn.
     expect(service.realignRollups()).toBe(0);
+  });
+
+  it("deletes a six-hour summary without touching the segment that shares its start", () => {
+    const { service, root } = createService();
+    // A rollup is named for its window start, which is also the id of the
+    // first segment in that window.
+    const id = "2026-09-09T16-00-00Z";
+    const segment = path.join(root, "recordings", "segments", id);
+    fs.mkdirSync(segment, { recursive: true });
+    fs.writeFileSync(path.join(segment, "events.jsonl"), "{}\n", "utf8");
+    const historyDirectory = path.join(root, "histories");
+    fs.mkdirSync(historyDirectory, { recursive: true });
+    const ready = (title: string, type: string) => ["---", `title: "${title}"`, `source_type: ${type}`, "summary_state: ready", "---", "", "body", ""].join("\n");
+    fs.writeFileSync(path.join(historyDirectory, `${id}-10min-summary.md`), ready("First window", "captured"));
+    fs.writeFileSync(path.join(historyDirectory, `${id}-6h-summary.md`), ready("Whole window", "rollup"));
+
+    expect(() => service.pinSegment(`${id}-6h-summary`, true)).toThrow(/only a ten-minute entry/);
+    expect(fs.existsSync(path.join(segment, ".pinned"))).toBe(false);
+
+    service.deleteHistory(`${id}-6h-summary`);
+
+    expect(fs.existsSync(segment)).toBe(true);
+    expect(service.snapshot().histories.map((entry) => entry.title)).toEqual(["First window"]);
+  });
+
+  it("writes no summary for a window in which nothing was observed", async () => {
+    const { service, root } = createService();
+    const segmentId = "2026-09-11T17-00-00Z";
+    const directory = path.join(root, "recordings", "segments", segmentId);
+    fs.mkdirSync(directory, { recursive: true });
+    const historyFile = path.join(root, "histories", `${segmentId}-10min-summary.md`);
+    const eventsFile = path.join(directory, "events.jsonl");
+    // What a locked Mac leaves behind: a segment that opened, and nothing else.
+    fs.writeFileSync(eventsFile, [
+      JSON.stringify({ recordType: "human_history_metadata", schemaVersion: 1, recordingId: segmentId, title: "t",
+        createdAt: "2026-09-11T17:00:00.000Z", platform: "macOS", display: { width: 1, height: 1 },
+        captureText: false, captureSearchText: true, allowedApplications: [], captureScopeApplications: [] }),
+      JSON.stringify({ recordType: "human_event", sequence: 1, timestamp: "2026-09-11T17:00:01.000Z",
+        eventType: "recording_started", application: {}, details: {} }),
+      "",
+    ].join("\n"), "utf8");
+
+    await finalize(service, {
+      id: segmentId, directory, eventsFile, historyFile,
+      metadataFile: path.join(directory, "metadata.json"),
+      startedAt: "2026-09-11T17:00:00.000Z", child: null, output: "",
+    });
+
+    expect(fs.existsSync(historyFile)).toBe(false);
+  });
+
+  it("sends the client every summary without its body, and notices a changed file", () => {
+    const { service, root } = createService();
+    const historyDirectory = path.join(root, "histories");
+    fs.mkdirSync(historyDirectory, { recursive: true });
+    const file = path.join(historyDirectory, "2026-09-11T02-10-00Z-10min-summary.md");
+    const write = (title: string) => fs.writeFileSync(file, ["---", `title: "${title}"`, "source_type: captured",
+      "summary_state: ready", "---", "", "a long body the timeline never renders", ""].join("\n"), "utf8");
+    write("Before");
+    expect(service.snapshot().histories[0].title).toBe("Before");
+
+    const client = clientSnapshot(service.snapshot());
+    expect(client.histories[0]).not.toHaveProperty("markdown");
+    expect(client.histories[0].title).toBe("Before");
+
+    // Parses are reused between polls, but a rewritten summary must show.
+    write("After, rewritten by the model");
+    expect(service.snapshot().histories[0].title).toBe("After, rewritten by the model");
   });
 
   it("finds relevant History whether or not its raw events still exist", () => {

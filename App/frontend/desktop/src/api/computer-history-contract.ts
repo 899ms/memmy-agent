@@ -14,11 +14,16 @@ export const ComputerHistoryEntrySchema = z.object({
   description: z.string().nullable(),
   applications: z.array(z.string()),
   summaryWindow: z.enum(["10min", "6h"]).nullable(),
+  // Keep segments visible when neither metadata nor legacy citations prove coverage.
+  coveredHistoryIds: z.array(z.string()).default([]),
   pinned: z.boolean(),
   eventStreamPath: z.string().nullable(),
   sourceType: z.enum(["captured", "rollup", "imported", "demo_fixture"]),
   createdAt: z.string(),
-  markdown: z.string(),
+  // Left out of what the desktop client receives: the timeline never renders a
+  // summary's body, and it was most of every response. The agent reads bodies
+  // in process.
+  markdown: z.string().optional(),
   filePath: z.string(),
   replayPlan: z.object({
     sourcePath: z.string(),
@@ -49,14 +54,6 @@ export const ComputerHistorySnapshotSchema = z.object({
     segmentStartedAt: z.string().nullable(),
     error: z.string().nullable(),
     narrationError: z.string().nullable()
-  }).strict(),
-  cuaRun: z.object({
-    kind: z.enum(["smoke", "workflow"]).nullable(),
-    status: z.enum(["idle", "running", "completed", "failed"]),
-    startedAt: z.string().nullable(),
-    finishedAt: z.string().nullable(),
-    output: z.string(),
-    error: z.string().nullable()
   }).strict(),
   histories: z.array(ComputerHistoryEntrySchema),
   workflows: z.array(ComputerHistoryWorkflowSchema),

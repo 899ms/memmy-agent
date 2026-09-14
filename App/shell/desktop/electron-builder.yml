@@ -57,6 +57,7 @@ mac:
   category: public.app-category.productivity
   extendInfo:
     NSMicrophoneUsageDescription: "Memmy uses the microphone only when you start voice input."
+    NSAppleEventsUsageDescription: "Memmy asks your browser whether a window is private, so that Computer History never records private windows."
   target:
     - target: dmg
   hardenedRuntime: true

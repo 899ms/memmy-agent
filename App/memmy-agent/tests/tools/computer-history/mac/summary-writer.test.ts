@@ -4,6 +4,7 @@ import {
   applyNarrative,
   compactEventEvidence,
   isNarrated,
+  MAX_EVIDENCE_CHARS,
   writeSegmentNarrative,
 } from "../../../../src/tools/computer-history/mac/summary-writer.js";
 
@@ -74,6 +75,20 @@ describe("segment narrative", () => {
     })).toEqual({ title: "Notes drafting", description: "You drafted a note.", body: "You drafted." });
   });
 
+  it.each([undefined, null, "", "   ", 42])("uses the factual description when the model has no usable body (%s)", async (body) => {
+    const description = "You verified build 218 and agreed to release it at 18:00.";
+    const { resolver } = runtime(JSON.stringify({ title: "Deployment review", description, body }));
+    const narrative = await writeSegmentNarrative(resolver, {
+      applications: [], evidence: "You verified the deployment.", window: "10min",
+    });
+    expect(narrative?.body).toContain(`## Memory summary\n\n${description}`);
+    const updated = applyNarrative(summary, narrative!);
+    expect(isNarrated(updated)).toBe(true);
+    expect(updated).toContain(`## Recording summary\n\n${description}`);
+    expect(updated).not.toContain("（尚未生成）");
+    expect(updated).toContain("- segments/2026-09-08T03-30-00Z");
+  });
+
   it("returns nothing rather than throwing when the model is unavailable", async () => {
     const failing = () => ({
       provider: { chatWithRetry: async () => { throw new Error("offline"); } } as any,
@@ -124,6 +139,8 @@ describe("segment narrative", () => {
     expect(updated).toContain('applications: ["com.apple.Notes", "com.google.Chrome"]');
     expect(isNarrated(updated)).toBe(true);
     expect(updated).not.toContain("summary_state: pending");
+    expect(updated).not.toContain("（尚未生成）");
+    expect(updated).toContain("## Memory summary\n\nYou opened Notes and drafted a short entry.");
   });
 
   it("reads the applications a summary recorded", () => {
@@ -308,5 +325,181 @@ describe("segment narrative", () => {
     });
 
     expect(seen).toEqual(["computer-use-fast"]);
+  });
+});
+
+describe("evidence sent to the model", () => {
+  const app = { name: "Claude", bundleId: "com.anthropic.claudefordesktop" };
+  const event = (extra: Record<string, unknown>) => JSON.stringify({
+    recordType: "human_event", timestamp: "2026-09-11T09:20:00Z", application: app, ...extra,
+  });
+
+  it("keeps permitted search queries without exposing redacted or ordinary typed text", () => {
+    const evidence = compactEventEvidence([
+      event({ eventType: "text_input", details: { text: "new API pricing calculator", characterCount: 26, redacted: false, textPurpose: "search_query" } }),
+      event({ eventType: "text_input", details: { text: "hidden search", characterCount: 13, redacted: true, textPurpose: "search_query" } }),
+      event({ eventType: "text_input", details: { text: "not explicitly permitted", characterCount: 24, textPurpose: "search_query" } }),
+      event({ eventType: "text_input", details: { text: "ordinary private draft", characterCount: 22, redacted: false } }),
+      event({ eventType: "text_input", details: { text: "api_key=sample-secret-value search documentation", characterCount: 49, redacted: false, textPurpose: "search_query" } }),
+    ]);
+    expect(evidence).toContain('search query: "new API pricing calculator"');
+    expect(evidence).toContain("api_key=[REDACTED] search documentation");
+    for (const excluded of ["hidden search", "not explicitly permitted", "ordinary private draft", "sample-secret-value"]) {
+      expect(evidence).not.toContain(excluded);
+    }
+    expect(evidence).toContain("typed 134 character(s)");
+  });
+
+  it("names what was clicked, masking credentials but never a password field's value", () => {
+    const evidence = compactEventEvidence([
+      event({ eventType: "mouse_click", details: { accessibility: { role: "AXTextField", value: "sk-proj-9f2KxQ7mLpA3vR8tYw1ZcN4bH6jD0eUsGiTo5qFa" } } }),
+      event({ eventType: "mouse_click", details: { accessibility: { role: "AXTextArea", value: "notes for the Friday review" } } }),
+      event({ eventType: "mouse_click", details: { accessibility: { role: "AXTextField", subrole: "AXSecureTextField", value: "hunter2" } } }),
+    ]);
+    expect(evidence).not.toContain("sk-proj-9f2K");
+    expect(evidence).toContain("notes for the Friday review");
+    expect(evidence).not.toContain("hunter2");
+  });
+
+  it("carries what was on screen, not only what was clicked", () => {
+    // The window's text was captured all along and never reached the model,
+    // which is why a window of reading summarized as "two clicks".
+    const evidence = compactEventEvidence([
+      event({ eventType: "application_changed", ax: { mode: "fullTree", text: [
+        "AXWindow||Claude|||",
+        "AXButton||Close|||",
+        "AXHeading||Computer History privacy review|||",
+        "AXStaticText||||| The redaction emptied the summaries",
+      ].join("\n") } }),
+      event({ eventType: "selection_changed", ax: { mode: "diffFromPrevious", text: [
+        "- AXStaticText||||| The redaction emptied the summaries",
+        "+ AXStaticText||||| Feed the window text to the model",
+      ].join("\n") } }),
+    ]);
+    expect(evidence).toContain("on screen:");
+    expect(evidence).toContain("Computer History privacy review");
+    expect(evidence).toContain("The redaction emptied the summaries");
+    // A diff contributes what came into view, not what left it.
+    expect(evidence).toContain("Feed the window text to the model");
+    // Controls are chrome, not content.
+    expect(evidence).not.toContain("Close");
+  });
+
+  it("does not resend what an application already showed", () => {
+    const snapshot = { mode: "fullTree", text: "AXStaticText||||| The same sidebar" };
+    const other = { name: "Notes", bundleId: "com.apple.Notes" };
+    const evidence = compactEventEvidence([
+      event({ eventType: "application_changed", ax: snapshot }),
+      JSON.stringify({ recordType: "human_event", timestamp: "2026-09-11T09:21:00Z", application: other, eventType: "mouse_click", details: {} }),
+      event({ eventType: "application_changed", ax: snapshot }),
+    ]);
+    expect(evidence.match(/The same sidebar/g)).toHaveLength(1);
+  });
+
+  it("samples a long single-app window through its final decision in the actual model prompt", async () => {
+    const lines = Array.from({ length: 200 }, (_, index) => event({
+      eventType: "accessibility_snapshot",
+      timestamp: new Date(Date.parse("2026-09-11T09:20:00Z") + index * 2_000).toISOString(),
+      ax: { mode: "fullTree", text: `AXStaticText||||| ${index === 0
+        ? "WINDOW_START_CONTEXT: reviewing deployment choices"
+        : index === 199 ? "FINAL_DECISION_RELEASE_218: approved release at 18:00"
+        : `STATE_${index}_ ${"Reviewing the current release proposal. ".repeat(4)}`}` },
+    }));
+    const evidence = compactEventEvidence(lines);
+    expect(evidence.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
+    expect(evidence).toContain("WINDOW_START_CONTEXT");
+    expect(evidence).toContain("FINAL_DECISION_RELEASE_218");
+    const states = [...evidence.matchAll(/STATE_(\d+)_/gu)].map((match) => Number(match[1]));
+    for (const [from, to] of [[1, 50], [50, 100], [100, 150], [150, 199]]) {
+      expect(states.some((index) => index >= from && index < to)).toBe(true);
+    }
+    const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
+    await writeSegmentNarrative(resolver, { applications: [app.bundleId], evidence, window: "10min" });
+    const prompt = chatWithRetry.mock.calls[0]![0].messages[1].content;
+    expect(prompt).toContain("WINDOW_START_CONTEXT");
+    expect(prompt).toContain("FINAL_DECISION_RELEASE_218");
+    expect(prompt.split("Evidence for this window:\n")[1]).toBe(evidence);
+  });
+
+  it("keeps the first and final arcs when the window contains more than forty", () => {
+    const evidence = compactEventEvidence(Array.from({ length: 81 }, (_, index) => event({
+      application: { name: `Application ${index}` },
+      eventType: "accessibility_snapshot",
+      ax: { mode: "fullTree", text: `AXStaticText||||| ARC_${index}_ ${index === 80 ? "FINAL_DECISION_RELEASE_218" : "Reviewing the proposal"}` },
+    })));
+    expect(evidence.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
+    expect(evidence).toContain("ARC_0_");
+    expect(evidence).toContain("ARC_80_ FINAL_DECISION_RELEASE_218");
+    const arcs = [...evidence.matchAll(/ARC_(\d+)_/gu)].map((match) => Number(match[1]));
+    expect(arcs).toHaveLength(40);
+    for (const [from, to] of [[0, 20], [20, 40], [40, 60], [60, 81]]) {
+      expect(arcs.some((index) => index >= from && index < to)).toBe(true);
+    }
+    expect(arcs).toEqual([...arcs].sort((left, right) => left - right));
+    expect(evidence).toContain("\n…\n");
+  });
+
+  it("returns unused space from short arcs to the substantive window", () => {
+    const evidence = compactEventEvidence([
+      event({ application: { name: "Launcher" }, eventType: "mouse_click", details: {} }),
+      ...Array.from({ length: 100 }, (_, index) => event({
+        eventType: "accessibility_snapshot",
+        ax: { mode: "fullTree", text: `AXStaticText||||| NOTE_${index}_ ${"Release review notes. ".repeat(6)}` },
+      })),
+    ]);
+    expect(evidence.length).toBeGreaterThan(MAX_EVIDENCE_CHARS * 0.9);
+    expect(evidence.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
+    expect(evidence).toContain("Launcher — 1 click(s)");
+    expect(evidence).toContain("NOTE_0_");
+    expect(evidence).toContain("NOTE_99_");
+  });
+
+  it("budgets long URLs and action labels without crowding out late arcs or leaking credentials", async () => {
+    const lines = Array.from({ length: 60 }, (_, index) => [
+      ...Array.from({ length: 8 }, (_, page) => event({
+        application: { name: `Browser ${index}` }, eventType: "page_context",
+        details: { url: `https://example.com/${index}/${page}/${"long-path/".repeat(500)}?api_key=sample-secret-value` },
+      })),
+      event({ application: { name: `Browser ${index}` }, eventType: "mouse_click", details: {
+        accessibility: { value: `${"long document title ".repeat(60)} api_key=another-secret-value` },
+      } }),
+      event({ application: { name: `Browser ${index}` }, eventType: "accessibility_snapshot",
+        ax: { mode: "fullTree", text: `AXStaticText||||| STATE_${index}_ ${index === 59 ? "FINAL_DECISION_RELEASE_218" : "Reviewed proposal"}` },
+      }),
+    ]).flat();
+    const evidence = compactEventEvidence(lines);
+    expect(evidence.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
+    expect(evidence).toContain("Browser 0");
+    expect(evidence).toContain("Browser 59");
+    expect(evidence).toContain("STATE_59_ FINAL_DECISION_RELEASE_218");
+    expect(evidence).not.toContain("sample-secret-value");
+    expect(evidence).not.toContain("another-secret-value");
+    const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
+    await writeSegmentNarrative(resolver, { applications: [], evidence, window: "10min" });
+    expect(chatWithRetry.mock.calls[0]![0].messages[1].content).toContain("FINAL_DECISION_RELEASE_218");
+  });
+
+  it("preserves final states inside long screen fields and beyond early action labels", () => {
+    const evidence = compactEventEvidence([
+      ...Array.from({ length: 12 }, (_, index) => event({ eventType: "mouse_click", details: {
+        accessibility: { title: `ACTION_${index}_ ${index === 11 ? "Release approved" : "Review draft"}` },
+      } })),
+      event({ eventType: "accessibility_snapshot", ax: { mode: "fullTree", text:
+        `AXStaticText||||| DOCUMENT_START ${"intermediate discussion ".repeat(100)} FINAL_DECISION_RELEASE_218` } }),
+    ]);
+    expect(evidence).toContain("ACTION_0_");
+    expect(evidence).toContain("ACTION_11_ Release approved");
+    expect(evidence).toContain("DOCUMENT_START");
+    expect(evidence).toContain("FINAL_DECISION_RELEASE_218");
+  });
+
+  it("samples oversized fallback evidence across the window instead of slicing away its ending", async () => {
+    const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
+    const evidence = ["WINDOW_START_CONTEXT", ...Array.from({ length: 300 }, (_, index) => `STATE_${index} ${"draft review ".repeat(20)}`), "FINAL_DECISION_RELEASE_218"].join("\n");
+    await writeSegmentNarrative(resolver, { applications: [], evidence, window: "10min" });
+    const supplied = chatWithRetry.mock.calls[0]![0].messages[1].content.split("Evidence for this window:\n")[1];
+    expect(supplied.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
+    expect(supplied).toContain("WINDOW_START_CONTEXT");
+    expect(supplied).toContain("FINAL_DECISION_RELEASE_218");
   });
 });
