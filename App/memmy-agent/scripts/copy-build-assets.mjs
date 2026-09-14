@@ -17,6 +17,8 @@ const staleFiles = [
   ...compiled("dist/core/agent-runtime/tools/computer-history"),
   ...compiled("dist/core/agent-runtime/tools/computer-history-settings"),
   ...compiled("dist/core/agent-runtime/tools/computer"),
+  // TypeScript does not delete outputs of removed sources on incremental builds.
+  ...compiled("dist/tools/computer-use/computer"),
   // Replay from a History was removed; the build copies assets but never
   // deletes one that is gone from src/.
   "dist/tools/computer-use/replay-cua.sh",
@@ -26,7 +28,7 @@ for (const target of staleDirectories) fs.rmSync(target, { recursive: true, forc
 for (const target of staleFiles) fs.rmSync(target, { force: true });
 
 // src/tools holds what Computer History runs besides compiled TypeScript: the
-// Swift helpers and the replay script. They are found beside the compiled
+// Swift helpers. They are found beside the compiled
 // modules at runtime, so they have to be copied there.
 for (const source of ["src/templates", "src/skills", "src/tools"]) {
   const destination = path.join("dist", path.relative("src", source));
