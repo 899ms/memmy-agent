@@ -10516,6 +10516,23 @@ input[type="checkbox"].check-sky:checked::after {
   display: none;
 }
 
+.app-tooltip--description {
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-color: var(--border-content-panel);
+  border-radius: 10px;
+  background: var(--color-background-paper);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--color-text-ink) 8%, transparent);
+  color: color-mix(in srgb, var(--color-text-ink) 78%, transparent);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.app-tooltip--description::after {
+  background: var(--color-background-paper);
+  border-color: var(--border-content-panel);
+}
+
 .app-tooltip--top {
   animation: app-tooltip-in-top var(--duration-fast) ease-out;
   transform: translate(-50%, -100%);
@@ -11718,17 +11735,12 @@ input[type="checkbox"].check-sky:checked::after {
   }
 }
 
-/* Computer History — the Codex-style single-column feed.
- *
- * The layout is copied from the reference design; the colour is the product's
- * own. Everything is drawn from the shared tokens through local properties, so
- * the page stays mint-and-white with the rest of the app and follows it if the
- * tokens move. Green marks state and nothing else: recording, a kept entry, a
- * dot on the rail. Deleting is the error colour, never the accent. */
+/* Computer History uses the shared memory header and preference switch.
+ * Timeline colours follow the product tokens; destructive actions use error. */
 .ch {
   --ch-canvas: var(--color-background-paper);
   --ch-surface: var(--color-background-paper);
-  --ch-border: var(--color-border-stone);
+  --ch-border: var(--border-content-panel);
   --ch-title: var(--color-text-ink);
   --ch-prose: color-mix(in srgb, var(--color-text-ink) 66%, transparent);
   --ch-muted: color-mix(in srgb, var(--color-text-ink) 42%, transparent);
@@ -11738,8 +11750,8 @@ input[type="checkbox"].check-sky:checked::after {
   --ch-accent: var(--color-action-sky-hover);
   --ch-danger: var(--color-status-error);
 
-  width: min(980px, calc(100% - 48px));
-  margin: 0 auto 48px;
+  min-width: 0;
+  margin-bottom: 48px;
   color: var(--ch-title);
 }
 
@@ -11749,31 +11761,33 @@ input[type="checkbox"].check-sky:checked::after {
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 4px 2px 14px;
+  margin-bottom: 12px;
 }
 
-.ch__head h1 {
+.ch__history-title {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
 }
 
 .ch__info {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--ch-rail);
-  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
   color: var(--ch-muted);
-  font-size: 10px;
-  font-style: italic;
-  cursor: help;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ch__info:hover {
+  color: var(--color-text-ink);
+  background: var(--color-surface-muted);
 }
 
 .ch__head-actions {
@@ -11782,52 +11796,73 @@ input[type="checkbox"].check-sky:checked::after {
   gap: 8px;
 }
 
-.ch__button {
-  display: inline-flex;
-  align-items: center;
+.ch__history-actions {
+  gap: 12px;
+}
+
+.ch__recording-setting {
+  gap: 16px;
+  padding: 16px 24px;
+  margin-bottom: 24px;
+}
+
+.ch-recording-confirmation {
+  /* The same confirmation also opens above the feature introduction. */
+  --z-modal: 4001;
+}
+
+.ch-recording-confirmation__details {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ch__recording-status {
+  min-height: 24px;
   gap: 6px;
-  padding: 7px 14px;
-  border: 1px solid var(--ch-border);
-  border-radius: 999px;
-  background: var(--ch-surface);
-  color: var(--ch-title);
-  font-size: 13px;
+  padding: 4px 9px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  white-space: nowrap;
 }
 
-.ch__button:hover:not(:disabled) {
-  background: var(--ch-chip);
-}
-
-.ch__button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.ch__button--recording {
-  border-color: color-mix(in srgb, var(--ch-accent) 34%, var(--ch-border));
-  color: color-mix(in srgb, var(--ch-accent) 76%, var(--color-text-ink));
-}
-
-.ch__recording-dot {
-  width: 7px;
-  height: 7px;
+.ch__recording-status-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--ch-accent);
-  animation: ch-pulse 2s ease-in-out infinite;
+  background: currentColor;
 }
 
-@keyframes ch-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+.ch__recording-switch:disabled,
+.ch-entry__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ch__recording-switch:focus-visible,
+.ch__info:focus-visible,
+.ch__clear-button:focus-visible,
+.ch-entry__action:focus-visible {
+  outline: 2px solid var(--color-action-sky);
+  outline-offset: 3px;
+}
+
+.ch__clear-button {
+  gap: 6px;
+  font-weight: 400;
+}
+
+.ch__clear-button:hover:not(:disabled) {
+  color: var(--ch-danger);
+  transform: none;
 }
 
 .ch__caret {
-  font-size: 11px;
-  line-height: 1;
-  color: var(--ch-muted);
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--ch-prose);
   transition: transform 120ms ease;
 }
 
@@ -11883,9 +11918,6 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch__feed {
-  border: 1px solid var(--ch-border);
-  border-radius: 18px;
-  background: var(--ch-canvas);
   overflow: hidden;
 }
 
@@ -11898,17 +11930,25 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch__day-head {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 20px 0 4px 28px;
-  padding: 0;
+  width: 100%;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 24px;
   border: 0;
   background: transparent;
   color: var(--ch-title);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
+  line-height: 20px;
+  text-align: left;
   cursor: pointer;
+}
+
+.ch__day-head:focus-visible {
+  outline: 2px solid var(--color-action-sky);
+  outline-offset: -3px;
 }
 
 .ch__empty {
@@ -11921,14 +11961,19 @@ input[type="checkbox"].check-sky:checked::after {
 
 /* One entry: the time, the rail it hangs from, and the account itself. */
 .ch-entry {
+  --ch-entry-top: 12px;
   display: grid;
   grid-template-columns: 88px 26px minmax(0, 1fr);
   align-items: start;
   padding: 0 28px 0 0;
 }
 
+.ch-entry:first-of-type {
+  --ch-entry-top: 4px;
+}
+
 .ch-entry__when {
-  padding-top: 24px;
+  padding-top: calc(var(--ch-entry-top) + 4px);
   color: var(--ch-muted);
   font-size: 13px;
   text-align: right;
@@ -11958,18 +12003,18 @@ input[type="checkbox"].check-sky:checked::after {
   content: "";
   position: absolute;
   inset: 0 0 auto;
-  height: 28px;
+  height: calc(var(--ch-entry-top) + 8px);
   background: var(--ch-canvas);
 }
 
 .ch-entry:last-child .ch-entry__rail {
-  height: 32px;
+  height: calc(var(--ch-entry-top) + 12px);
   min-height: 0;
 }
 
 .ch-entry__dot {
   position: absolute;
-  top: 27px;
+  top: calc(var(--ch-entry-top) + 7px);
   left: 50%;
   width: 7px;
   height: 7px;
@@ -11979,7 +12024,9 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch-entry__body {
-  padding: 20px 0 36px 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--ch-entry-top) 0 16px 20px;
 }
 
 .ch-entry__title-row {
@@ -12013,9 +12060,11 @@ input[type="checkbox"].check-sky:checked::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
   padding: 2px 6px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-btn);
   background: transparent;
   color: var(--ch-muted);
   font-size: 12px;
@@ -12026,6 +12075,11 @@ input[type="checkbox"].check-sky:checked::after {
 .ch-entry__action:hover:not(:disabled) {
   background: var(--ch-chip);
   color: var(--ch-title);
+}
+
+.ch-entry__action--delete:hover:not(:disabled) {
+  background: var(--color-status-error-soft);
+  color: var(--ch-danger);
 }
 
 .ch-entry__action--on {
@@ -12062,7 +12116,7 @@ input[type="checkbox"].check-sky:checked::after {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -12118,8 +12172,13 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 @media (max-width: 720px) {
-  .ch {
-    width: calc(100% - 24px);
+  .ch__recording-setting {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .ch__recording-setting .ch__head-actions {
+    margin-left: auto;
   }
 
   .ch-entry {
@@ -12128,6 +12187,6 @@ input[type="checkbox"].check-sky:checked::after {
   }
 
   .ch__day-head {
-    margin-left: 16px;
+    padding-inline: 16px;
   }
 }
