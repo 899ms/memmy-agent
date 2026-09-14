@@ -17,6 +17,7 @@ import { VERSION } from "../../../version.js";
 import { Tool } from "./base.js";
 import { ToolRegistry } from "./registry.js";
 import { storeToolImageArtifact } from "../../../utils/artifacts.js";
+import { resolveOpenComputerUseCommand } from "../../../tools/computer-use/open-computer-use-binary.js";
 
 const TRANSIENT_EXC_NAMES = new Set([
   "ClosedResourceError",
@@ -644,7 +645,7 @@ export async function connectMcpServers(
       let write: any;
       if (transport === "stdio") {
         const [normalizedCommand, args, env] = normalizeWindowsStdioCommand(
-          command,
+          resolveOpenComputerUseCommand(command),
           cfgValue(cfg, "args") ?? [],
           cfgValue(cfg, "env") ?? null,
           cfgValue(cfg, "platform"),
@@ -725,6 +726,7 @@ export async function connectMcpServers(
         },
       };
     } catch (error) {
+      console.error(`MCP server '${name}': failed to connect: ${String((error as Error).message ?? error)}`);
       const text = String((error as Error).message ?? error).toLowerCase();
       if (["parse error", "invalid json", "unexpected token", "jsonrpc", "content-length"].some((marker) => text.includes(marker))) {
         console.error(
