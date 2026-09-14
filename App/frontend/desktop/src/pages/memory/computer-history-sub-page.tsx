@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -260,6 +261,17 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
     });
   }, []);
 
+  const openMarkdown = useCallback(async (entry: ComputerHistoryEntry) => {
+    setError(null);
+    try {
+      const open = window.memmy?.openComputerHistoryMarkdown;
+      if (typeof open !== "function") throw new Error(t("computerHistory.openMarkdownUnavailable"));
+      await open(entry.filePath);
+    } catch (cause) {
+      setError(t("computerHistory.openMarkdownFailed", { error: errorMessage(cause) }));
+    }
+  }, [t]);
+
   return (
     <section className="ch">
       <header className="ch__head">
@@ -364,6 +376,15 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
                       <div className="ch-entry__title-row">
                         <h3>{entry.title}</h3>
                         <div className="ch-entry__row-actions">
+                          <button
+                            type="button"
+                            className="ch-entry__action"
+                            title={t("computerHistory.openMarkdown")}
+                            aria-label={t("computerHistory.openMarkdownLabel", { title: entry.title })}
+                            onClick={() => void openMarkdown(entry)}
+                          >
+                            <FileText size={14} aria-hidden />
+                          </button>
                           {/* A six-hour summary has no raw events of its own to keep. */}
                           {entry.summaryWindow === "6h" ? null : (
                           <button
