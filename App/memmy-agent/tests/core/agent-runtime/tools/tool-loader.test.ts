@@ -159,7 +159,7 @@ describe("ToolLoader discovery", () => {
     expect(classNames).not.toContain("MCPPromptWrapper");
   });
 
-  it("keeps the dormant built-in computer executor out of the agent registry", () => {
+  it("keeps removed desktop executors out of the agent registry", () => {
     const classNames = new Set(new ToolLoader().discover().map((cls) => cls.name));
     expect(classNames).not.toContain("ComputerScreenshotTool");
     expect(classNames).not.toContain("ComputerClickTool");
