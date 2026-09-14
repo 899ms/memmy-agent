@@ -33,19 +33,12 @@
 .chi-orb--two { bottom: -140px; left: -90px; background: var(--color-action-sky); }
 .ch__info--button { padding: 0; background: none; cursor: pointer; }
 .ch__info--button:hover { color: var(--ch-title); border-color: var(--ch-title); }
-.chi-question { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; width: 100%; max-width: 380px; box-sizing: border-box; padding: 22px 24px; margin-bottom: 28px; transform: translateX(12px); border: 1px solid var(--chi-border); border-radius: 20px 20px 5px 20px; background: var(--color-background-paper); box-shadow: var(--shadow-soft); color: var(--color-text-ink); font-size: 21px; font-weight: 600; line-height: 1.5; }
-.chi-question svg { flex-shrink: 0; color: var(--color-action-sky-hover); }
-.chi-history-illustration { width: 100%; max-width: 380px; box-sizing: border-box; padding: 24px 26px 16px; transform: translateX(-12px); border: 1px solid var(--chi-border); border-radius: 20px; background: color-mix(in srgb, var(--color-background-paper) 95%, transparent); box-shadow: 0 12px 35px color-mix(in srgb, var(--color-action-sky-hover) 8%, transparent); }
-.chi-history-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; color: var(--chi-muted); font-size: 15px; font-weight: 550; }
-.chi-history-heading svg { color: var(--color-action-sky-hover); }
-.chi-history-line { display: grid; grid-template-columns: 34px 1fr 24px; align-items: center; gap: 14px; height: 54px; }
-.chi-history-line > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--color-canvas-oat); color: var(--color-action-sky-hover); }
-.chi-history-line > i, .chi-history-line > b { display: block; height: 7px; border-radius: 8px; background: color-mix(in srgb, var(--color-border-stone) 65%, var(--color-background-paper)); }
-.chi-history-line > i { width: 92%; }
-.chi-history-line:nth-child(3) > i { width: 70%; }
-.chi-history-line:nth-child(4) > i { width: 82%; }
+.chi-questions { display: grid; gap: 18px; width: 100%; max-width: 400px; }
+.chi-question { position: relative; z-index: 1; display: flex; align-items: flex-start; gap: 12px; width: 100%; box-sizing: border-box; padding: 20px 22px; border: 1px solid var(--chi-border); border-radius: 20px 20px 5px 20px; background: var(--color-background-paper); box-shadow: var(--shadow-soft); color: var(--color-text-ink); font-size: 17px; font-weight: 500; line-height: 1.65; }
+.chi-question span { min-width: 0; overflow-wrap: anywhere; }
+.chi-question svg { flex-shrink: 0; margin-top: 3px; color: var(--color-action-sky-hover); }
 .chi-scope summary:focus-visible { outline: 2px solid var(--color-action-sky-hover); outline-offset: 4px; }
-@media (max-height: 770px) and (min-width: 741px) { .chi-copy { padding: 40px 36px 30px; } .chi-copy h2 { font-size: 32px; } .chi-description { margin: 20px 0 30px; } .chi-visual { min-height: 480px; } .chi-question { font-size: 20px; margin-bottom: 24px; } }
-@media (max-height: 625px) and (min-width: 741px) { .chi-copy { padding: 28px 32px 24px; } .chi-copy h2 { font-size: 28px; } .chi-description { margin: 16px 0 22px; font-size: 13px; } .chi-visual { min-height: 420px; padding: 32px; } .chi-question { padding: 16px 20px; font-size: 18px; margin-bottom: 20px; } .chi-history-illustration { padding: 18px 22px 10px; } .chi-history-line { height: 46px; } }
-@media (max-width: 740px) { .chi-backdrop { padding: 16px; } .chi-dialog { width: min(470px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow-y: auto; border-radius: 21px; } .chi-copy { overflow: visible; padding: 36px 28px 28px; flex-shrink: 0; } .chi-copy h2 { font-size: 29px; } .chi-close { color: var(--chi-muted); top: 15px; right: 15px; } .chi-description { margin: 20px 0 28px; } .chi-visual { min-height: 0; padding: 32px 28px; flex-shrink: 0; } .chi-question { font-size: 18px; padding: 18px 20px; margin-bottom: 20px; } .chi-history-illustration { padding: 20px 22px 12px; } .chi-history-line { height: 46px; } }
+@media (max-height: 770px) and (min-width: 741px) { .chi-copy { padding: 40px 36px 30px; } .chi-copy h2 { font-size: 32px; } .chi-description { margin: 20px 0 30px; } .chi-visual { min-height: 480px; } .chi-questions { gap: 18px; } }
+@media (max-height: 625px) and (min-width: 741px) { .chi-copy { padding: 28px 32px 24px; } .chi-copy h2 { font-size: 28px; } .chi-description { margin: 16px 0 22px; font-size: 13px; } .chi-visual { min-height: 420px; padding: 32px; } .chi-question { padding: 16px 18px; font-size: 16px; } }
+@media (max-width: 740px) { .chi-backdrop { padding: 16px; } .chi-dialog { width: min(470px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow-y: auto; border-radius: 21px; } .chi-copy { overflow: visible; padding: 36px 28px 28px; flex-shrink: 0; } .chi-copy h2 { font-size: 29px; } .chi-close { color: var(--chi-muted); top: 15px; right: 15px; } .chi-description { margin: 20px 0 28px; } .chi-visual { min-height: 0; padding: 32px 28px; flex-shrink: 0; } .chi-question { font-size: 16px; padding: 18px 20px; } }
 @media (prefers-reduced-motion: reduce) { .chi-switch, .chi-switch span { transition: none; } }
