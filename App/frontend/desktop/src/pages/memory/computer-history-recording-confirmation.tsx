@@ -9,6 +9,7 @@ export function ComputerHistoryRecordingConfirmation(props: {
   onConfirm(): void;
 }) {
   const { t } = useTranslation();
+  const [noticeBefore, noticeAfter] = t("computerHistory.enableModelNotice").split("{operations}");
 
   useLayoutEffect(() => {
     if (!props.open) return;
@@ -34,9 +35,11 @@ export function ComputerHistoryRecordingConfirmation(props: {
         confirmLabel={t("computerHistory.enableConfirm")}
         message={(
           <ul className="ch-recording-confirmation__details">
-            <li>{t("computerHistory.enableModelNotice")}</li>
-            <li>{t("computerHistory.enableLocalNotice")}</li>
-            <li>{t("computerHistory.enableStopNotice")}</li>
+            <li>
+              {noticeBefore}
+              <strong className="font-semibold text-text-ink">{t("computerHistory.enableAllOperations")}</strong>
+              {noticeAfter}{t("computerHistory.enableLocalNotice")}
+            </li>
           </ul>
         )}
         onCancel={props.onCancel}

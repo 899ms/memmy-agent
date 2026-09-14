@@ -11796,9 +11796,13 @@ input[type="checkbox"].check-sky:checked::after {
   gap: 8px;
 }
 
+.ch__history-actions {
+  gap: 12px;
+}
+
 .ch__recording-setting {
   gap: 16px;
-  padding: 24px;
+  padding: 16px 24px;
   margin-bottom: 24px;
 }
 
@@ -11815,8 +11819,19 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch__recording-status {
-  color: var(--ch-muted);
-  font-size: 12px;
+  min-height: 24px;
+  gap: 6px;
+  padding: 4px 9px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ch__recording-status-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .ch__recording-switch:disabled,
@@ -11920,7 +11935,7 @@ input[type="checkbox"].check-sky:checked::after {
   width: 100%;
   gap: 8px;
   margin: 0;
-  padding: 16px 24px;
+  padding: 12px 24px;
   border: 0;
   background: transparent;
   color: var(--ch-title);
@@ -11946,7 +11961,7 @@ input[type="checkbox"].check-sky:checked::after {
 
 /* One entry: the time, the rail it hangs from, and the account itself. */
 .ch-entry {
-  --ch-entry-top: 20px;
+  --ch-entry-top: 12px;
   display: grid;
   grid-template-columns: 88px 26px minmax(0, 1fr);
   align-items: start;
@@ -11954,7 +11969,7 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch-entry:first-of-type {
-  --ch-entry-top: 8px;
+  --ch-entry-top: 4px;
 }
 
 .ch-entry__when {
@@ -12009,7 +12024,9 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 .ch-entry__body {
-  padding: var(--ch-entry-top) 0 36px 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--ch-entry-top) 0 16px 20px;
 }
 
 .ch-entry__title-row {
@@ -12099,7 +12116,7 @@ input[type="checkbox"].check-sky:checked::after {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 14px 0 0;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }

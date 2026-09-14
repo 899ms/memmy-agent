@@ -457,10 +457,10 @@ describe("ComputerHistorySubPage", () => {
     expect(startComputerHistoryObservation).not.toHaveBeenCalled();
     expect(recordingSwitch?.getAttribute("aria-checked")).toBe("false");
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("开启计算机使用记录？");
+    expect(dialog?.textContent).toContain("开启电脑历史记录？");
     expect(dialog?.textContent).toContain("大模型");
     expect(dialog?.textContent).toContain("本机");
-    expect(dialog?.textContent).toContain("关闭");
+    expect(dialog?.querySelector(".ch-recording-confirmation__details")?.textContent).toBe("开启后，你在电脑上的所有操作，会被记录并发送给已配置的大模型进行分析，使用记录保存在本机。");
 
     act(() => { confirmationButton()?.click(); });
     expect(recordingSwitch?.disabled).toBe(true);
