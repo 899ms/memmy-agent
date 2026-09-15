@@ -1,3 +1,4 @@
+import { macPermissionSettingsGuide } from "../../../src/tools/computer-use/mac-permission-settings.js";
 import fs from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:http";
@@ -131,6 +132,28 @@ afterEach(() => {
 });
 
 describe("MCP connection helpers", () => {
+  it.runIf(process.platform === "darwin")("attaches preflight to connected OCU tools before sending target calls", async () => {
+    const root = tempRoot();
+    const launcher = path.join(root, "doctor.cjs");
+    fs.writeFileSync(launcher, "console.log('Permissions: accessibility=missing, screenRecording=missing');");
+    const session = fakeSession(["get_app_state"]);
+    const call = vi.spyOn(session, "callTool");
+    const show = vi.spyOn(macPermissionSettingsGuide, "show").mockResolvedValue(true);
+    setMcpRuntimeForTest(runtimeFor({ [process.execPath]: session }) as any);
+    const registry = new ToolRegistry();
+    const stacks = await connectMcpServers({open_computer_use: {
+      command: process.execPath, args: [launcher, "mcp"],
+    }}, registry);
+    try {
+      expect(await registry.execute("mcp_open_computer_use_get_app_state", {app: "WeChat"})).toContain("operation was not executed");
+      expect(call).not.toHaveBeenCalled();
+      expect(show).toHaveBeenCalledWith("computer-use", "accessibility");
+    } finally {
+      await stacks.open_computer_use.aclose();
+      call.mockRestore(); show.mockRestore();
+    }
+  });
+
   it("registers bundled OCU tools without looking up the launcher on PATH", async () => {
     const binary = resolveOpenComputerUseCommand("open-computer-use");
     expect(path.isAbsolute(binary)).toBe(true);
