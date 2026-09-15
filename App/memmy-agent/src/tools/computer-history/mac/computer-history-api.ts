@@ -1,3 +1,4 @@
+import { computerHistoryPermissionError, macPermissionSettingsGuide } from "../../computer-use/mac-permission-settings.js";
 import {
   ObservationSettingsStore,
 } from "./settings-store.js";
@@ -679,6 +680,8 @@ export class ComputerHistoryDemoService {
   }
 
   private failObservation(message: string): void {
+    const permission = computerHistoryPermissionError(message);
+    if (permission) void macPermissionSettingsGuide.show("computer-history", permission);
     this.clearLiveSummaryTimer();
     this.clearRotationTimer();
     if (this.segment) this.segment.child = null;

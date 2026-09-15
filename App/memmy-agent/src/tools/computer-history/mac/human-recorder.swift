@@ -79,10 +79,10 @@ func characters(from event: CGEvent) -> String {
   return String(utf16CodeUnits: characters, count: length)
 }
 
-func permissionsPayload(request: Bool) -> [String: Any] {
-  let inputMonitoring = request ? CGRequestListenEventAccess() : CGPreflightListenEventAccess()
-  let screenRecording = request ? CGRequestScreenCaptureAccess() : CGPreflightScreenCaptureAccess()
-  let accessibilityOptions = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: request] as CFDictionary
+func permissionsPayload(request: Bool, requestInputMonitoring: Bool = false, requestScreenRecording: Bool = false, requestAccessibility: Bool = false) -> [String: Any] {
+  let inputMonitoring = (request || requestInputMonitoring) ? CGRequestListenEventAccess() : CGPreflightListenEventAccess()
+  let screenRecording = (request || requestScreenRecording) ? CGRequestScreenCaptureAccess() : CGPreflightScreenCaptureAccess()
+  let accessibilityOptions = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: (request || requestAccessibility)] as CFDictionary
   let accessibility = AXIsProcessTrustedWithOptions(accessibilityOptions)
   let bounds = CGDisplayBounds(CGMainDisplayID())
   return [
@@ -723,7 +723,12 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 
 let arguments = Set(CommandLine.arguments.dropFirst())
 if arguments.contains("--permissions") || arguments.contains("--request-permissions") {
-  emit(permissionsPayload(request: arguments.contains("--request-permissions")))
+  emit(permissionsPayload(
+    request: arguments.contains("--request-permissions"),
+    requestInputMonitoring: arguments.contains("--request-input-monitoring"),
+    requestScreenRecording: arguments.contains("--request-screen-recording"),
+    requestAccessibility: arguments.contains("--request-accessibility")
+  ))
   exit(0)
 }
 

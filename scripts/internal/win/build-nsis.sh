@@ -535,6 +535,8 @@ verify_windows_agent_native_artifacts() {
 
   require_packaged_runtime_file "$RUNTIME_DIR/memmy-agent/node_modules/@memmy/local-api-contracts/dist/index.js"
   require_packaged_runtime_file "$RUNTIME_DIR/memmy-agent/node_modules/open-computer-use/dist/windows/amd64/open-computer-use.exe"
+  node "$ROOT_DIR/scripts/internal/shared/check-open-computer-use.mjs" \
+    "$RUNTIME_DIR/memmy-agent/node_modules/open-computer-use/dist/windows/amd64/open-computer-use.exe"
   if [ -L "$RUNTIME_DIR/memmy-agent/node_modules/@memmy/local-api-contracts" ]; then
     echo "Packaged local API contracts must not be a symbolic link." >&2
     exit 1
@@ -623,6 +625,8 @@ verify_packaged_windows_unpacked_artifacts() {
   require_packaged_runtime_glob "$unpacked_runtime/memory/node_modules/@img/sharp-win32-x64/lib/libvips*.dll"
   require_packaged_runtime_file "$unpacked_runtime/memmy-agent/node_modules/@memmy/migrations/dist/index.js"
   require_packaged_runtime_file "$unpacked_runtime/memmy-agent/node_modules/open-computer-use/dist/windows/amd64/open-computer-use.exe"
+  node "$ROOT_DIR/scripts/internal/shared/check-open-computer-use.mjs" \
+    "$unpacked_runtime/memmy-agent/node_modules/open-computer-use/dist/windows/amd64/open-computer-use.exe"
   require_packaged_runtime_file "$unpacked_runtime/memmy-agent/node_modules/@memmy/migrations/dist/state-store.js"
   verify_migration_state_compatibility_module \
     "$unpacked_runtime/memmy-agent/node_modules/@memmy/migrations/dist/state-store.js"
