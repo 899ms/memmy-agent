@@ -52,7 +52,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 at-spi2-core dbus-x11 xvfb
+          sudo apt-get install -y dbus-x11 xvfb
+          bash scripts/internal/linux/install-computer-use-deps.sh
+          bash scripts/internal/linux/install-computer-use-deps.sh
       - name: Check Linux MCP and desktop backend
         if: runner.os == 'Linux'
         run: dbus-run-session -- xvfb-run -a node scripts/internal/shared/check-open-computer-use.mjs "$OCU_BINARY" --list-apps | tee ocu-native-result.json
