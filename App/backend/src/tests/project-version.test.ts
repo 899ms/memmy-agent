@@ -12,6 +12,8 @@ describe("project version", () => {
 
     expect(MEMMY_VERSION).toBe(rootManifest.version);
     expect(MEMMY_VERSION).toMatch(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
+    expect(readFileSync(resolve(repoRoot, "App/backend/src/project-version.ts"), "utf8"))
+      .toContain(`MEMMY_VERSION = ${JSON.stringify(rootManifest.version)}`);
     for (const path of ["App/shell/desktop/package.json", "App/memmy-agent/package.json"]) {
       const consumer = JSON.parse(readFileSync(resolve(repoRoot, path), "utf8"));
       expect(MEMMY_VERSION, path).toBe(consumer.version);
