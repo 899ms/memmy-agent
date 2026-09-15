@@ -72,6 +72,7 @@ export interface WorkerJobProcessors {
     applyReward(job: EvolutionJobRecord): MaybePromise<void>;
     reflectTrace(job: EvolutionJobRecord): MaybePromise<void>;
     resolveSkillTrial(job: EvolutionJobRecord): MaybePromise<void>;
+    createDecisionRepair(job: EvolutionJobRecord): MaybePromise<void>;
   };
   embedding: {
     embedMemory(job: EvolutionJobRecord): MaybePromise<void>;
@@ -275,6 +276,9 @@ export async function processJob(
       return;
     case "skill_trial_resolve":
       await deps.processors.feedback.resolveSkillTrial(job);
+      return;
+    case "decision_repair":
+      await deps.processors.feedback.createDecisionRepair(job);
       return;
     case "l2_association":
       await deps.processors.evolution.associateL2(job);
@@ -598,6 +602,14 @@ export function evolutionJobDedupeKey(input: Pick<EnqueueJobInput, "jobType" | "
         ? `negative_experience:${source}:${sourceEventId}`
         : input.episodeId
           ? `negative_experience:${input.episodeId}`
+          : undefined;
+    }
+    case "decision_repair": {
+      const feedbackId = payloadString("feedbackId");
+      return feedbackId
+        ? `decision_repair:${feedbackId}`
+        : input.episodeId
+          ? `decision_repair:${input.episodeId}`
           : undefined;
     }
     case "l2_association":
