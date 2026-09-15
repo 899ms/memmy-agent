@@ -4,6 +4,32 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
+/** Supply the OS desktop environment needed by the native backend. */
+export function openComputerUseEnvironment(
+  command: string,
+  configured: Record<string, string> | null,
+  platform = process.platform,
+  inherited: NodeJS.ProcessEnv = process.env,
+): Record<string, string> | null {
+  if (command !== "open-computer-use") return configured;
+  if (platform === "win32") {
+    const systemRoot = inherited.SystemRoot ?? inherited.SYSTEMROOT ?? "C:\\Windows";
+    const paths = configured?.PATH ?? configured?.Path ?? inherited.PATH ?? inherited.Path ?? "";
+    const result = { ...configured };
+    delete result.Path;
+    result.PATH = [paths, path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0")].filter(Boolean).join(";");
+    return result;
+  }
+  if (platform !== "linux") return configured;
+  const session: Record<string, string> = {};
+  for (const key of ["DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+    "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP", "AT_SPI_BUS_ADDRESS", "GDK_BACKEND"]) {
+    const value = inherited[key];
+    if (value !== undefined) session[key] = value;
+  }
+  return { ...session, ...configured };
+}
+
 /** Resolve only the default command; explicit user commands remain authoritative. */
 export function resolveOpenComputerUseCommand(
   command: string,
