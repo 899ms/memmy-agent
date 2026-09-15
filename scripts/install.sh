@@ -160,6 +160,20 @@ printf 'Installing Agent production dependencies for this Linux machine...\n'
 (cd "$AGENT_DIR" && npm ci --omit=dev --no-audit --no-fund) \
   || fail "Agent dependency installation failed; the previous Memmy installation is unchanged"
 
+# OCU is installed from the release's local vendor tarball, not from npm.
+OCU_ARCH="$PLATFORM_ARCH"
+[ "$OCU_ARCH" != "x64" ] || OCU_ARCH="amd64"
+OCU_BINARY="$AGENT_DIR/node_modules/open-computer-use/dist/linux/$OCU_ARCH/open-computer-use"
+[ -x "$OCU_BINARY" ] || fail "archive installation is missing the bundled Computer Use executable for $PLATFORM_ARCH"
+"$OCU_BINARY" --version >/dev/null || fail "bundled Computer Use executable cannot run on this machine"
+
+# The CLI also runs on headless servers. Report desktop prerequisites without
+# preventing those users from installing the rest of Memmy.
+if ! python3 -c 'import gi; gi.require_version("Atspi", "2.0"); gi.require_version("Gdk", "3.0"); from gi.repository import Atspi, Gdk' >/dev/null 2>&1; then
+  printf '%s\n' 'Computer Use needs Python 3, PyGObject, AT-SPI2 and GDK 3 in a logged-in desktop session.' \
+    'On Debian/Ubuntu: sudo apt install python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 at-spi2-core' >&2
+fi
+
 mkdir -p "$MEMMY_HOME_DIR" "$(dirname "$CONFIG_PATH")" "$(dirname "$MEMORY_DB_PATH")" "$WORKSPACE_DIR"
 chmod 0700 "$MEMMY_HOME_DIR" "$(dirname "$MEMORY_DB_PATH")" "$WORKSPACE_DIR"
 

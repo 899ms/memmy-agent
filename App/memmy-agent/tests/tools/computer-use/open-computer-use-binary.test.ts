@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveOpenComputerUseCommand } from "../../../src/tools/computer-use/open-computer-use-binary.js";
+import { openComputerUseEnvironment, resolveOpenComputerUseCommand } from "../../../src/tools/computer-use/open-computer-use-binary.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -10,6 +10,19 @@ afterEach(() => {
 });
 
 describe("bundled Open Computer Use command", () => {
+  it("passes Linux desktop session variables through MCP without leaking unrelated environment variables", () => {
+    const inherited = { DISPLAY: ":1", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus", PRIVATE_TOKEN: "secret" };
+    expect(openComputerUseEnvironment("open-computer-use", { DISPLAY: ":2" }, "linux", inherited)).toEqual({
+      DISPLAY: ":2", DBUS_SESSION_BUS_ADDRESS: inherited.DBUS_SESSION_BUS_ADDRESS,
+    });
+    expect(openComputerUseEnvironment("other-server", null, "linux", inherited)).toBeNull();
+    expect(openComputerUseEnvironment("open-computer-use", null, "darwin", inherited)).toBeNull();
+  });
+  it("makes the built-in Windows PowerShell backend available with a minimal PATH", () => {
+    expect(openComputerUseEnvironment("open-computer-use", { Path: "D:\\custom" }, "win32", { SystemRoot: "C:\\Windows" })).toEqual({
+      PATH: "D:\\custom;C:\\Windows\\System32\\WindowsPowerShell\\v1.0",
+    });
+  });
   it.each([
     ["darwin", "arm64", "dist/Open Computer Use.app/Contents/MacOS/OpenComputerUse"],
     ["darwin", "x64", "dist/Open Computer Use.app/Contents/MacOS/OpenComputerUse"],

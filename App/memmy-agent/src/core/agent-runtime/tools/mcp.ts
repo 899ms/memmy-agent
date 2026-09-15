@@ -17,7 +17,7 @@ import { VERSION } from "../../../version.js";
 import { Tool } from "./base.js";
 import { ToolRegistry } from "./registry.js";
 import { storeToolImageArtifact } from "../../../utils/artifacts.js";
-import { resolveOpenComputerUseCommand } from "../../../tools/computer-use/open-computer-use-binary.js";
+import { openComputerUseEnvironment, resolveOpenComputerUseCommand } from "../../../tools/computer-use/open-computer-use-binary.js";
 
 const TRANSIENT_EXC_NAMES = new Set([
   "ClosedResourceError",
@@ -647,7 +647,7 @@ export async function connectMcpServers(
         const [normalizedCommand, args, env] = normalizeWindowsStdioCommand(
           resolveOpenComputerUseCommand(command),
           cfgValue(cfg, "args") ?? [],
-          cfgValue(cfg, "env") ?? null,
+          openComputerUseEnvironment(command, cfgValue(cfg, "env") ?? null),
           cfgValue(cfg, "platform"),
         );
         const params = new runtime.StdioServerParameters({

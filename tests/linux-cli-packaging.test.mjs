@@ -155,6 +155,10 @@ function makeInstallerFixture(root) {
   writeFileSync(path.join(model, "tokenizer.json"), "{}\n");
   writeFileSync(path.join(model, "tokenizer_config.json"), "{}\n");
   writeFileSync(path.join(model, "onnx", "model_quantized.onnx"), "fixture\n");
+  const ocu = path.join(agent, "node_modules", "open-computer-use", "dist", "linux", "amd64", "open-computer-use");
+  mkdirSync(path.dirname(ocu), { recursive: true });
+  writeFileSync(ocu, "#!/bin/sh\necho 0.3.5\n");
+  chmodSync(ocu, 0o755);
   const tar = spawnSync("tar", ["-czf", archive, "-C", payload, "."], { encoding: "utf8" });
   expect(tar.status, tar.stderr).toBe(0);
   writeFileSync(`${archive}.sha256`, `${sha256(archive)}  ${path.basename(archive)}\n`);
@@ -287,12 +291,13 @@ describe("Linux CLI package boundary", () => {
       encoding: "utf8",
       env: cleanNpmLifecycleEnv({ MEMMY_EMBEDDING_MODEL_SOURCE_DIR: path.dirname(path.dirname(modelSource)) }),
     });
-    expect(result.status, result.stderr).toBe(0);
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
 
     const archive = path.join(output, "memmy-agent-linux-cli.tar.gz");
     const listing = spawnSync("tar", ["-tzf", archive], { encoding: "utf8" });
     expect(listing.status, listing.stderr).toBe(0);
     expect(listing.stdout).toContain("App/memmy-agent/dist/main.js");
+    expect(listing.stdout).toMatch(/App\/memmy-agent\/vendor\/open-computer-use-[^/]+-linux\.tgz/);
     expect(listing.stdout).toContain("AgentSourceCore/dist/src/index.js");
     expect(listing.stdout).toContain("Memory/dist/src/server/index.js");
     expect(listing.stdout).toContain("Memory/dist/src/cli/index.js");
