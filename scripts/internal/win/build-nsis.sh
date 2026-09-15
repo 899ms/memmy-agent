@@ -749,33 +749,7 @@ verify_windows_sharp_module
 package_step_start "Stage Windows memmy-agent runtime files"
 cp -R "$AGENT_DIR/dist" "$RUNTIME_DIR/memmy-agent/dist"
 
-verify_office_skill_payload() {
-  local skill_root="$RUNTIME_DIR/memmy-agent/dist/skills"
-  for skill in pptx xlsx; do
-    require_packaged_runtime_file "$skill_root/$skill/SKILL.md"
-    require_packaged_runtime_glob "$skill_root/$skill/scripts/*.mjs"
-  done
-  local schema_root="$skill_root/pptx/schemas"
-  local schema_manifest="$schema_root/SCHEMA-MANIFEST.json"
-  require_packaged_runtime_file "$schema_manifest"
-  node - "$schema_manifest" "$schema_root" <<'NODE'
-const { createHash } = require("node:crypto");
-const { readFileSync } = require("node:fs");
-const path = require("node:path");
-const [manifestPath, schemaRoot] = process.argv.slice(2);
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-if (!manifest.root || !Array.isArray(manifest.files) || !manifest.files.includes(manifest.root)) throw new Error(`Invalid PPTX schema manifest: ${manifestPath}`);
-for (const relative of manifest.files) {
-  if (!relative || path.posix.normalize(relative) !== relative || relative.startsWith("../") || path.isAbsolute(relative)) throw new Error(`Unsafe PPTX schema path: ${relative}`);
-  const bytes = readFileSync(path.join(schemaRoot, relative));
-  const expected = manifest.sha256?.[relative];
-  if (!/^[0-9a-f]{64}$/i.test(expected ?? "")) throw new Error(`Missing PPTX schema hash: ${relative}`);
-  const actual = createHash("sha256").update(bytes).digest("hex");
-  if (actual !== expected.toLowerCase()) throw new Error(`PPTX schema hash mismatch: ${relative}`);
-}
-NODE
-}
-verify_office_skill_payload
+node "$ROOT_DIR/scripts/internal/shared/check-office-slim-assets.mjs" "$RUNTIME_DIR/memmy-agent"
 cp "$AGENT_DIR/package.json" "$RUNTIME_DIR/memmy-agent/package.json"
 cp "$AGENT_DIR/package-lock.json" "$RUNTIME_DIR/memmy-agent/package-lock.json"
 

@@ -9,6 +9,11 @@ directories:
 files:
   - dist/**/*
   - package.json
+  - "!dist/runtime/memmy-agent/dist/skills/docx{,/**}"
+  - "!dist/runtime/memmy-agent/dist/skills/pptx{,/**}"
+  - "!dist/runtime/memmy-agent/dist/skills/xlsx{,/**}"
+  - "!dist/runtime/memmy-agent/dist/extra-dependencies/office-rendering{,/**}"
+  - "!dist/runtime/memmy-agent/dist/extra-dependencies/docx-rendering{,/**}"
   - "!**/node_modules/open-computer-use/dist/linux/**"
   - "!**/node_modules/open-computer-use/dist/Open Computer Use.app/**"
   - "!**/node_modules/open-computer-use/dist/windows/arm64/**"

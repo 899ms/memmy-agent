@@ -5,10 +5,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VERSION="$(node -p "require('$REPO_ROOT/package.json').version")"
 OUTPUT_DIR="$REPO_ROOT/release-assets"
 ARCHIVE_NAME="memmy-agent-linux-cli.tar.gz"
-# The Office rendering executables are provisioned by release packaging and are
-# not tracked here, so contract runs opt out of the presence check. Hashes named
-# by a manifest still describe a real payload and are always verified below.
-ALLOW_MISSING_OFFICE_PAYLOAD="${MEMMY_LINUX_CLI_ALLOW_MISSING_OFFICE_PAYLOAD:-0}"
 
 usage() {
   printf '%s\n' \
@@ -105,6 +101,7 @@ cp "$REPO_ROOT/package-lock.json" "$PAYLOAD_DIR/package-lock.json"
 cp "$REPO_ROOT/App/memmy-agent/package.json" "$PAYLOAD_DIR/App/memmy-agent/package.json"
 cp "$REPO_ROOT/App/memmy-agent/package-lock.json" "$PAYLOAD_DIR/App/memmy-agent/package-lock.json"
 cp -R "$REPO_ROOT/App/memmy-agent/dist" "$PAYLOAD_DIR/App/memmy-agent/dist"
+node "$REPO_ROOT/scripts/internal/shared/check-office-slim-assets.mjs" "$PAYLOAD_DIR/App/memmy-agent"
 node "$REPO_ROOT/scripts/internal/linux/bundle-open-computer-use.mjs" \
   "$REPO_ROOT/App/memmy-agent/node_modules/open-computer-use" \
   "$PAYLOAD_DIR/App/memmy-agent"

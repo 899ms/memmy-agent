@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Keep Office source available for future work, but do not ship or advertise
+// its built-in skills in the v1.1.6 Computer Use candidate.
+const excludedOfficeSkills = ["docx", "pptx", "xlsx"];
+const excludedSkillRoots = new Set(excludedOfficeSkills.map((skill) => path.resolve("src", "skills", skill)));
+
 const staleDirectories = [
   "dist/skills/goal",
   "dist/skills/memory",
@@ -26,16 +31,8 @@ const staleFiles = [
 
 for (const target of staleDirectories) fs.rmSync(target, { recursive: true, force: true });
 for (const target of staleFiles) fs.rmSync(target, { force: true });
-for (const required of [
-  path.join("src", "skills", "pptx", "SKILL.md"),
-  path.join("src", "skills", "pptx", "schemas", "SCHEMA-MANIFEST.json"),
-  path.join("src", "skills", "xlsx", "SKILL.md"),
-]) {
-  if (!fs.existsSync(required)) throw new Error(`Missing required skill asset: ${required}`);
-}
-// Replace document-skill directories as units so removed resources do not
-// survive in dist from an earlier build.
-for (const skill of ["docx", "pptx", "xlsx"]) {
+// Remove earlier Office-enabled outputs as well as excluding fresh copies.
+for (const skill of excludedOfficeSkills) {
   fs.rmSync(path.join("dist", "skills", skill), { recursive: true, force: true });
 }
 
@@ -46,13 +43,15 @@ for (const source of ["src/templates", "src/skills", "src/tools"]) {
   const destination = path.join("dist", path.relative("src", source));
   fs.cpSync(source, destination, {
     recursive: true,
-    filter: (entry) => !entry.endsWith(".ts") && path.basename(entry) !== ".gitkeep",
+    filter: (entry) => !excludedSkillRoots.has(path.resolve(entry))
+      && !entry.endsWith(".ts") && path.basename(entry) !== ".gitkeep",
   });
 }
 
-// A previous build may have left the pre-migration directory behind. It is
-// never a release source and must not be copied into dist.
-fs.rmSync(path.join("dist", "extra-dependencies", "docx-rendering"), {
-  recursive: true,
-  force: true,
-});
+// Both current and pre-migration renderers can survive an incremental build.
+for (const renderer of ["office-rendering", "docx-rendering"]) {
+  fs.rmSync(path.join("dist", "extra-dependencies", renderer), {
+    recursive: true,
+    force: true,
+  });
+}
