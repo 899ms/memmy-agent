@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -61,6 +62,8 @@ function makeInstallerFixture(root) {
     "Xenova",
     "all-MiniLM-L6-v2",
   );
+  mkdirSync(path.join(payload, "scripts/internal/linux"), { recursive: true });
+  copyFileSync(path.join(repoRoot, "scripts/internal/linux/install-computer-use-deps.sh"), path.join(payload, "scripts/internal/linux/install-computer-use-deps.sh"));
   const archive = path.join(release, "memmy-agent-linux-cli.tar.gz");
   mkdirSync(path.join(agent, "dist"), { recursive: true });
   mkdirSync(path.join(backend, "dist", "src", "services"), { recursive: true });
@@ -219,6 +222,7 @@ function runInstaller(home, release, tools, overrides = {}) {
     env: cleanNpmLifecycleEnv({
       HOME: home,
       MEMMY_VERSION: "9.9.9",
+      MEMMY_INSTALL_COMPUTER_USE_DEPS: "0",
       MEMMY_RELEASE_BASE_URL: pathToFileURL(release).href.replace(/\/$/, ""),
       MEMMY_FIXTURE_MAIN_PID: String(process.pid),
       PATH: `${tools}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -297,6 +301,7 @@ describe("Linux CLI package boundary", () => {
     const listing = spawnSync("tar", ["-tzf", archive], { encoding: "utf8" });
     expect(listing.status, listing.stderr).toBe(0);
     expect(listing.stdout).toContain("App/memmy-agent/dist/main.js");
+    expect(listing.stdout).toContain("scripts/internal/linux/install-computer-use-deps.sh");
     expect(listing.stdout).toMatch(/App\/memmy-agent\/vendor\/open-computer-use-[^/]+-linux\.tgz/);
     expect(listing.stdout).toContain("AgentSourceCore/dist/src/index.js");
     expect(listing.stdout).toContain("Memory/dist/src/server/index.js");
@@ -491,6 +496,15 @@ describe("Linux one-line installer transaction", () => {
     expect(readlinkSync(current)).toBe(beforeFailure);
 
     const configPath = path.join(home, ".memmy", "config.yaml");
+    const configBeforeDependencies = readFileSync(configPath, "utf8");
+    const dependenciesFailed = runInstaller(home, release, tools, {
+      MEMMY_INSTALL_COMPUTER_USE_DEPS: "invalid",
+    });
+    expect(dependenciesFailed.status).not.toBe(0);
+    expect(dependenciesFailed.stderr).toContain("Computer Use dependency setup failed");
+    expect(readlinkSync(current)).toBe(beforeFailure);
+    expect(readFileSync(configPath, "utf8")).toBe(configBeforeDependencies);
+
     const configBeforeSystemdFailure = "sentinel: preserve-on-rollback\n";
     writeFileSync(configPath, configBeforeSystemdFailure);
     const systemdFailed = runInstaller(home, release, tools, {

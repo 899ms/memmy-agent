@@ -92,6 +92,10 @@ mkdir -p \
   "$PAYLOAD_DIR/Migrations" \
   "$OUTPUT_DIR"
 
+mkdir -p "$PAYLOAD_DIR/scripts/internal/linux"
+cp "$REPO_ROOT/scripts/internal/linux/install-computer-use-deps.sh" \
+  "$PAYLOAD_DIR/scripts/internal/linux/install-computer-use-deps.sh"
+
 cp "$REPO_ROOT/package.json" "$PAYLOAD_DIR/package.json"
 cp "$REPO_ROOT/package-lock.json" "$PAYLOAD_DIR/package-lock.json"
 cp "$REPO_ROOT/App/memmy-agent/package.json" "$PAYLOAD_DIR/App/memmy-agent/package.json"

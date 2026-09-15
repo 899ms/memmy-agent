@@ -167,12 +167,10 @@ OCU_BINARY="$AGENT_DIR/node_modules/open-computer-use/dist/linux/$OCU_ARCH/open-
 [ -x "$OCU_BINARY" ] || fail "archive installation is missing the bundled Computer Use executable for $PLATFORM_ARCH"
 "$OCU_BINARY" --version >/dev/null || fail "bundled Computer Use executable cannot run on this machine"
 
-# The CLI also runs on headless servers. Report desktop prerequisites without
-# preventing those users from installing the rest of Memmy.
-if ! python3 -c 'import gi; gi.require_version("Atspi", "2.0"); gi.require_version("Gdk", "3.0"); from gi.repository import Atspi, Gdk' >/dev/null 2>&1; then
-  printf '%s\n' 'Computer Use needs Python 3, PyGObject, AT-SPI2 and GDK 3 in a logged-in desktop session.' \
-    'On Debian/Ubuntu: sudo apt install python3-gi gir1.2-atspi-2.0 gir1.2-gtk-3.0 at-spi2-core' >&2
-fi
+# Run the dependency helper from the checksum-verified release payload. Keep
+# privilege elevation limited to system package installation, before activation.
+bash "$PAYLOAD_DIR/scripts/internal/linux/install-computer-use-deps.sh" \
+  || fail "Computer Use dependency setup failed; the previous Memmy installation is unchanged"
 
 mkdir -p "$MEMMY_HOME_DIR" "$(dirname "$CONFIG_PATH")" "$(dirname "$MEMORY_DB_PATH")" "$WORKSPACE_DIR"
 chmod 0700 "$MEMMY_HOME_DIR" "$(dirname "$MEMORY_DB_PATH")" "$WORKSPACE_DIR"
