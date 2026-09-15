@@ -14,6 +14,8 @@ describe("SocialLoginButtons", () => {
     expect(html).toContain("Continue with Google");
     expect(html).toContain("Continue with GitHub");
     expect(html).toContain("#4285F4");
+    expect(html).toContain("flex flex-col gap-3");
+    expect(html).not.toContain("grid-cols-2");
   });
 
   it("shows browser completion feedback while a provider is pending", () => {
