@@ -57,10 +57,7 @@ describe("build runtime assets", () => {
     expect(fs.existsSync(path.join(root, "dist/skills/ui-craft/references"))).toBe(false);
 
     const renderingRoot = path.join(root, "dist/extra-dependencies/office-rendering");
-    for (const platform of ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64", "linux-arm64"]) {
-      expect(fs.existsSync(path.join(renderingRoot, platform, "OFFICE-RENDERING-MANIFEST.json"))).toBe(true);
-    }
-    expect(fs.existsSync(path.join(renderingRoot, "THIRD-PARTY-NOTICES.md"))).toBe(true);
+    expect(fs.existsSync(renderingRoot)).toBe(false);
     expect(fs.existsSync(path.join(root, "dist/extra-dependencies/docx-rendering"))).toBe(false);
     expect(fs.existsSync(path.join(root, "dist/skills/pptx/SKILL.md"))).toBe(true);
     expect(fs.existsSync(path.join(root, "dist/skills/xlsx/SKILL.md"))).toBe(true);
