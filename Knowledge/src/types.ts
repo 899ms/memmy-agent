@@ -5,6 +5,7 @@ export interface KnowledgeBase {
   shared?: boolean;
   sharedByMe?: boolean;
   ownerName?: string;
+  memberCount?: number;
 }
 export interface KnowledgeMember { userId: string; name: string; status: string; }
 export interface KnowledgeSettings {

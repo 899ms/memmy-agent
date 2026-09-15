@@ -18,7 +18,7 @@ it("shows management only, with recall off by default and no exposed saved secre
     authenticated: true,
     enabled: false,
     serviceAvailable: true,
-    bases: [{ id: "base-1", name: "差旅制度", selected: true }],
+    bases: [{ id: "base-1", name: "差旅制度", selected: false }],
   };
   const calls: { url: string; body?: Record<string, unknown> }[] = [];
   vi.stubGlobal(
@@ -29,6 +29,11 @@ it("shows management only, with recall off by default and no exposed saved secre
       if (String(url).includes("/files"))
         return new Response(JSON.stringify({ files: [], total: 0, page: 1 }));
       if (body?.enabled !== undefined) state.enabled = body.enabled;
+      if (Array.isArray(body?.selectedIds))
+        state.bases.forEach(
+          (base) =>
+            (base.selected = (body.selectedIds as string[]).includes(base.id)),
+        );
       return new Response(JSON.stringify(state));
     }),
   );
@@ -45,8 +50,8 @@ it("shows management only, with recall off by default and no exposed saved secre
       />,
     );
   });
-  const toggle = container.querySelector<HTMLInputElement>('[role="switch"]')!;
-  expect(toggle.checked).toBe(false);
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
   expect(toggle.disabled).toBe(false);
   expect(container.textContent).toContain("差旅制度");
   expect(container.querySelector("textarea")).toBeNull();
@@ -54,12 +59,9 @@ it("shows management only, with recall off by default and no exposed saved secre
     container.querySelector<HTMLInputElement>('input[type="file"]')!;
   expect(fileInput.multiple).toBe(true);
   expect(fileInput.hidden).toBe(true);
-  expect(container.querySelector(".mk-upload-picker button")!.textContent).toBe(
-    "选择文件",
-  );
-  expect(
-    container.querySelector(".mk-upload-picker button + span")!.textContent,
-  ).toBe("上传文档（每个文件最多 20 MB）");
+  const dropzone = container.querySelector<HTMLElement>(".mk-drop")!;
+  expect(dropzone.textContent).toContain("选择文件");
+  expect(dropzone.textContent).toContain("每个文件最多 20 MB");
   expect(container.querySelector('input[type="password"]')).toBeNull();
   expect(container.textContent).not.toContain("API Key");
   expect(container.textContent).not.toContain("MemOS 云服务连接");
@@ -71,6 +73,13 @@ it("shows management only, with recall off by default and no exposed saved secre
   await act(async () => {
     toggle.click();
   });
-  expect(calls.some((call) => call.body?.enabled === true)).toBe(true);
-  expect(toggle.checked).toBe(true);
+  expect(
+    calls.some(
+      (call) =>
+        call.body?.enabled === true &&
+        Array.isArray(call.body?.selectedIds) &&
+        (call.body.selectedIds as string[]).includes("base-1"),
+    ),
+  ).toBe(true);
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
 });
