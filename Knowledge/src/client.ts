@@ -194,6 +194,7 @@ export function parseSettings(input: unknown): KnowledgeSettings {
         name: text(base.name),
         selected: base.selected === true,
         ...(typeof base.shared === "boolean" ? { shared: base.shared } : {}),
+        ...(typeof base.sharedByMe === "boolean" ? { sharedByMe: base.sharedByMe } : {}),
         ...(typeof base.ownerName === "string" && base.ownerName ? { ownerName: base.ownerName } : {}),
       };
     }),

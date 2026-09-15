@@ -3,6 +3,7 @@ export interface KnowledgeBase {
   name: string;
   selected: boolean;
   shared?: boolean;
+  sharedByMe?: boolean;
   ownerName?: string;
 }
 export interface KnowledgeMember { userId: string; name: string; status: string; }
