@@ -1943,25 +1943,6 @@ function cleanUserRequest(value: string): string {
   return normalized.slice(0, 500);
 }
 
-function cleanCaptureUrl(value: string): string | null {
-  const normalized = value.trim();
-  if (!normalized) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(normalized);
-  } catch {
-    throw new ComputerHistoryApiError(400, "starting URL must be a valid http(s) URL");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new ComputerHistoryApiError(400, "starting URL must use http or https");
-  }
-  if (parsed.username || parsed.password) {
-    throw new ComputerHistoryApiError(400, "starting URL must not contain credentials");
-  }
-  parsed.search = "";
-  parsed.hash = "";
-  return parsed.toString().slice(0, 2048);
-}
 
 function slug(value: string): string {
   const normalized = value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/gu, "-").replace(/^-|-$/g, "");

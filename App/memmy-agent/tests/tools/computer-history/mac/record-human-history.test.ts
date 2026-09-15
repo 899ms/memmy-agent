@@ -293,12 +293,12 @@ test("withholds a password field and masks credentials anywhere", () => {
     value: "hunter2",
     descendants: [
       { role: "AXButton", title: "Bearer abcdefghijklmnop1234" },
-      { role: "AXTextField", value: "sk-proj-9f2KxQ7mLpA3vR8tYw1ZcN4bH6jD0eUsGiTo5qFa" },
+      { role: "AXTextField", value: "demo-secret-value-123" },
     ],
   }) as Record<string, any>;
   assert.equal(scrubbed.value, "[REDACTED]");
   assert.doesNotMatch(scrubbed.descendants[0].title, /abcdefghijklmnop1234/);
-  assert.doesNotMatch(scrubbed.descendants[1].value, /sk-proj-9f2K/);
+  assert.doesNotMatch(scrubbed.descendants[1].value, /demo-secret-value/);
 });
 
 test("keeps window snapshots readable, full or diff, masking only credentials", () => {
@@ -308,11 +308,11 @@ test("keeps window snapshots readable, full or diff, masking only credentials", 
       "AXStaticText||Inbox|||",
       "AXTextArea||Body|||the plan for Friday",
       "AXTextField|AXSecureTextField|Password|||hunter2",
-      "AXStaticText||||| token: sk-proj-9f2KxQ7mLpA3vR8tYw1ZcN4bH6jD0eUsGiTo5qFa",
+      "AXStaticText||||| token: demo-secret-value-123",
     ].join("\n"),
   }) as { text: string };
   assert.match(full.text, /the plan for Friday/);
-  assert.doesNotMatch(full.text, /hunter2|sk-proj-9f2K/);
+  assert.doesNotMatch(full.text, /hunter2|demo-secret-value/);
   const diff = scrubAxSnapshot({
     mode: "diffFromPrevious",
     text: ["- AXTextField||Search|||old query", "+ AXTextField||Search|||new query"].join("\n"),
