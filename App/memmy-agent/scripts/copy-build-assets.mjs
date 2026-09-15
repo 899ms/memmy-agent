@@ -50,23 +50,6 @@ for (const source of ["src/templates", "src/skills", "src/tools"]) {
   });
 }
 
-const renderingSource = path.resolve("extra-dependencies/office-rendering");
-const renderingDestination = path.resolve("dist/extra-dependencies/office-rendering");
-const platformKeys = ["darwin-arm64", "darwin-x64", "win32-x64", "linux-x64", "linux-arm64"];
-if (!fs.existsSync(renderingSource)) {
-  throw new Error(`Missing shared Office rendering directory: ${renderingSource}`);
-}
-for (const platform of platformKeys) {
-  const manifest = path.join(renderingSource, platform, "OFFICE-RENDERING-MANIFEST.json");
-  if (!fs.existsSync(manifest)) throw new Error(`Missing Office rendering manifest: ${manifest}`);
-  JSON.parse(fs.readFileSync(manifest, "utf8"));
-}
-const staging = `${renderingDestination}.staging-${process.pid}`;
-fs.rmSync(staging, { recursive: true, force: true });
-fs.cpSync(renderingSource, staging, { recursive: true, force: true });
-fs.rmSync(renderingDestination, { recursive: true, force: true });
-fs.mkdirSync(path.dirname(renderingDestination), { recursive: true });
-fs.renameSync(staging, renderingDestination);
 // A previous build may have left the pre-migration directory behind. It is
 // never a release source and must not be copied into dist.
 fs.rmSync(path.join("dist", "extra-dependencies", "docx-rendering"), {
