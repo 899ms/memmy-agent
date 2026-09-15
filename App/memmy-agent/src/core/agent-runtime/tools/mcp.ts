@@ -19,6 +19,8 @@ import { ToolRegistry } from "./registry.js";
 import { storeToolImageArtifact } from "../../../utils/artifacts.js";
 import { openComputerUseEnvironment, resolveOpenComputerUseCommand } from "../../../tools/computer-use/open-computer-use-binary.js";
 
+import { computerUsePermissionError, macPermissionSettingsGuide } from "../../../tools/computer-use/mac-permission-settings.js";
+
 const TRANSIENT_EXC_NAMES = new Set([
   "ClosedResourceError",
   "BrokenResourceError",
@@ -413,6 +415,7 @@ export async function connectInMemoryMcpServer(server: any): Promise<InMemoryMcp
 export class MCPToolWrapper extends Tool {
   static pluginDiscoverable = false;
   private session: any;
+  private readonly serverName: string;
   originalName: string;
   private toolName: string;
   private toolDescription: string;
@@ -422,6 +425,7 @@ export class MCPToolWrapper extends Tool {
   constructor(session: any, serverName: string, toolDef: any, toolTimeout = 30) {
     super();
     this.session = session;
+    this.serverName = serverName;
     this.originalName = toolDef.name;
     this.toolName = sanitizeName(`mcp_${serverName}_${toolDef.name}`);
     this.toolDescription = toolDef.description || toolDef.name;
@@ -449,6 +453,15 @@ export class MCPToolWrapper extends Tool {
           this.toolTimeout,
           "timeout",
         );
+        const permission = computerUsePermissionError(this.serverName, result);
+        if (permission && await macPermissionSettingsGuide.show("computer-use", permission)) {
+          // Keep the failed result intact. Opening Settings does not grant access
+          // and must never replay a click or text input automatically.
+          result.content = [...(result.content ?? []), {
+            type: "text",
+            text: "macOS System Settings was opened for this permission. Ask the user to enable access for Open Computer Use, then retry when they are ready. Do not claim permission was granted or the requested action succeeded.",
+          }];
+        }
         return convertMcpToolContent(result, "auto");
       } catch (error) {
         if ((error as Error).message === "timeout") return `(MCP tool call timed out after ${this.toolTimeout}s)`;

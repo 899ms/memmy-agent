@@ -425,23 +425,28 @@ async function ensureHelper(): Promise<string> {
   return binary;
 }
 
-async function helperJson(binary: string, mode: string): Promise<RecorderPermissions> {
-  const { stdout } = await execFileAsync(binary, [mode], { timeout: 60_000 });
+async function helperJson(binary: string, mode: string, extraArgs: string[] = []): Promise<RecorderPermissions> {
+  const { stdout } = await execFileAsync(binary, [mode, ...extraArgs], { timeout: 60_000 });
   return JSON.parse(stdout.trim());
 }
 
-async function checkPermissions(
+export async function checkPermissions(
   binary: string,
   { screenshots = true, accessibility = true }: { screenshots?: boolean; accessibility?: boolean } = {},
+  readPermissions: typeof helperJson = helperJson,
 ): Promise<RecorderPermissions> {
-  let permissions = await helperJson(binary, "--permissions");
+  let permissions = await readPermissions(binary, "--permissions");
   const missingRequiredPermission = () => (
     !permissions.inputMonitoring
       || (screenshots && !permissions.screenRecording)
       || (accessibility && !permissions.accessibility)
   );
   if (missingRequiredPermission()) {
-    permissions = await helperJson(binary, "--request-permissions");
+    const requests: string[] = [];
+    if (!permissions.inputMonitoring) requests.push("--request-input-monitoring");
+    if (screenshots && !permissions.screenRecording) requests.push("--request-screen-recording");
+    if (accessibility && !permissions.accessibility) requests.push("--request-accessibility");
+    permissions = await readPermissions(binary, "--permissions", requests);
   }
   if (missingRequiredPermission()) {
     const missing: string[] = [];
