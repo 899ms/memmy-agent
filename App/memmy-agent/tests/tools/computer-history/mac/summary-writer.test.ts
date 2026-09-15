@@ -33,7 +33,9 @@ const summary = [
 ].join("\n");
 
 function runtime(content: string) {
-  const chatWithRetry = vi.fn(async () => ({ content }));
+  // Keep the mock call tuple open: the production provider receives a request
+  // object, and Vitest otherwise infers a zero-argument tuple for this mock.
+  const chatWithRetry = vi.fn(async (..._args: unknown[]) => ({ content }));
   return {
     resolver: () => ({ provider: { chatWithRetry } as any, model: "test-model" }),
     chatWithRetry,
@@ -415,7 +417,7 @@ describe("evidence sent to the model", () => {
     }
     const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
     await writeSegmentNarrative(resolver, { applications: [app.bundleId], evidence, window: "10min" });
-    const prompt = chatWithRetry.mock.calls[0]![0].messages[1].content;
+    const prompt = (chatWithRetry.mock.calls[0]![0] as any).messages[1].content;
     expect(prompt).toContain("WINDOW_START_CONTEXT");
     expect(prompt).toContain("DECISION_NOTE_218");
     expect(prompt.split("Evidence for this window:\n")[1]).toBe(evidence);
@@ -476,7 +478,7 @@ describe("evidence sent to the model", () => {
     expect(evidence).not.toContain("another-secret-value");
     const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
     await writeSegmentNarrative(resolver, { applications: [], evidence, window: "10min" });
-    expect(chatWithRetry.mock.calls[0]![0].messages[1].content).toContain("DECISION_NOTE_218");
+    expect((chatWithRetry.mock.calls[0]![0] as any).messages[1].content).toContain("DECISION_NOTE_218");
   });
 
   it("preserves final states inside long screen fields and beyond early action labels", () => {
@@ -497,7 +499,7 @@ describe("evidence sent to the model", () => {
     const { resolver, chatWithRetry } = runtime('{"title":"Release","description":"Approved build 218"}');
     const evidence = ["WINDOW_START_CONTEXT", ...Array.from({ length: 300 }, (_, index) => `STATE_${index} ${"draft review ".repeat(20)}`), "DECISION_NOTE_218"].join("\n");
     await writeSegmentNarrative(resolver, { applications: [], evidence, window: "10min" });
-    const supplied = chatWithRetry.mock.calls[0]![0].messages[1].content.split("Evidence for this window:\n")[1];
+    const supplied = (chatWithRetry.mock.calls[0]![0] as any).messages[1].content.split("Evidence for this window:\n")[1];
     expect(supplied.length).toBeLessThanOrEqual(MAX_EVIDENCE_CHARS);
     expect(supplied).toContain("WINDOW_START_CONTEXT");
     expect(supplied).toContain("DECISION_NOTE_218");
