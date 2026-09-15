@@ -35,7 +35,10 @@ const summary = [
 function runtime(content: string) {
   // Keep the mock call tuple open: the production provider receives a request
   // object, and Vitest otherwise infers a zero-argument tuple for this mock.
-  const chatWithRetry = vi.fn(async (..._args: unknown[]) => ({ content }));
+  const chatWithRetry = vi.fn(async (...args: unknown[]) => {
+    void args;
+    return { content };
+  });
   return {
     resolver: () => ({ provider: { chatWithRetry } as any, model: "test-model" }),
     chatWithRetry,

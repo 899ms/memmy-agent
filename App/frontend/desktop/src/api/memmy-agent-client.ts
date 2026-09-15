@@ -7,10 +7,8 @@
  */
 import { z } from "zod";
 import {
-  ComputerHistoryEntrySchema,
   ApplicationIconSchema,
   ComputerHistorySnapshotSchema,
-  ComputerHistoryWorkflowSchema,
 } from "./computer-history-contract.js";
 
 export { ComputerHistorySnapshotSchema };
