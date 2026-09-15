@@ -166,6 +166,7 @@ export interface AlgorithmConfig {
     failureThreshold: number;
     failureWindow: number;
     valueDelta: number;
+    valueDistributionRepairEnabled: boolean;
     minLowValueThreshold: number;
     useLlm: boolean;
     attachToPolicy: boolean;
@@ -409,6 +410,7 @@ export const DEFAULT_MEMMY_CONFIG: MemmyConfig = {
       failureThreshold: 3,
       failureWindow: 5,
       valueDelta: 0.5,
+      valueDistributionRepairEnabled: false,
       minLowValueThreshold: 0.01,
       useLlm: true,
       attachToPolicy: true,
@@ -1134,6 +1136,10 @@ function normalizeAlgorithm(input: Record<string, unknown>): AlgorithmConfig {
       failureThreshold: numberValue(feedback.failureThreshold, DEFAULT_MEMMY_CONFIG.algorithm.feedback.failureThreshold),
       failureWindow: numberValue(feedback.failureWindow, DEFAULT_MEMMY_CONFIG.algorithm.feedback.failureWindow),
       valueDelta: numberValue(feedback.valueDelta, DEFAULT_MEMMY_CONFIG.algorithm.feedback.valueDelta),
+      valueDistributionRepairEnabled: booleanValue(
+        feedback.valueDistributionRepairEnabled,
+        DEFAULT_MEMMY_CONFIG.algorithm.feedback.valueDistributionRepairEnabled
+      ),
       minLowValueThreshold: numberValue(feedback.minLowValueThreshold, DEFAULT_MEMMY_CONFIG.algorithm.feedback.minLowValueThreshold),
       useLlm: booleanValue(feedback.useLlm, DEFAULT_MEMMY_CONFIG.algorithm.feedback.useLlm),
       attachToPolicy: booleanValue(feedback.attachToPolicy, DEFAULT_MEMMY_CONFIG.algorithm.feedback.attachToPolicy),

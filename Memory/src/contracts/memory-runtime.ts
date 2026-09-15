@@ -58,6 +58,7 @@ export const JobTypeSchema = z.enum([
   "skill_cluster_assign",
   "skill_batch_evolve",
   "skill_trial_resolve",
+  "decision_repair",
   "work_memory_extract"
 ]);
 export type JobType = z.infer<typeof JobTypeSchema>;

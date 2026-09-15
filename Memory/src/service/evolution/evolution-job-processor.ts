@@ -171,6 +171,7 @@ export class EvolutionJobProcessor {
     this.negativeExperience = new NegativeExperiencePipeline({
       repos: deps.repos,
       get config() { return owner.deps.config; },
+      skillLlm: deps.skillLlm,
       buildMemory: deps.buildMemory,
       upsertEvolutionMemory: this.upsertEvolutionMemory.bind(this),
       enqueueJob: deps.enqueueJob,
@@ -219,8 +220,8 @@ export class EvolutionJobProcessor {
     return this.bigTurnSpan.splitAndStore(job);
   }
 
-  materializeNegativeExperience(job: EvolutionJobRecord): void {
-    this.negativeExperience.materialize(job);
+  materializeNegativeExperience(job: EvolutionJobRecord): Promise<void> {
+    return this.negativeExperience.materialize(job);
   }
 
   summarizeTraceForCapture(input: {

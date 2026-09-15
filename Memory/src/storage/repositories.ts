@@ -7569,6 +7569,7 @@ function evolutionJobPrioritySql(): string {
              WHEN job_type = 'embedding' THEN 3
              WHEN job_type = 'episode_idle_close' THEN 10
              WHEN job_type = 'reflection' THEN 20
+             WHEN job_type = 'decision_repair' THEN 25
              WHEN job_type = 'reward' THEN 30
              WHEN job_type = 'span_big_turn' THEN 35
              WHEN job_type = 'l2_association' THEN 40

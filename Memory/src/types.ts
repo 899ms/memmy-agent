@@ -75,6 +75,7 @@ export type JobType =
   | "reward"
   | "span_big_turn"
   | "negative_experience"
+  | "decision_repair"
   | "l2_association"
   | "l2_induction"
   | "l3_abstraction"
