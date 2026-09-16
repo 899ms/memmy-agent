@@ -10,6 +10,7 @@ import readline from "node:readline";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { redactSensitive } from "./redaction.js";
+import { ensureNativeHistoryHelper } from "./native-helper.js";
 import {
   BROWSER_BUNDLE_IDS,
   DEFAULT_OBSERVATION_SETTINGS,
@@ -63,8 +64,7 @@ interface RecorderPermissions {
 
 const execFileAsync = promisify(execFile);
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-// The build copies the Swift source beside the compiled module, so the helper
-// is found the same way from `src/` under test and from `dist/` when shipped.
+// Source installs compile this file; desktop packages ship a native executable.
 const HELPER_SOURCE = path.join(SCRIPT_DIR, "human-recorder.swift");
 // Where the service keeps recordings. This was once resolved against the
 // repository root, which a packaged app does not have.
@@ -409,20 +409,7 @@ export function recordingStep(onWriteFailure: () => void) {
 }
 
 async function ensureHelper(): Promise<string> {
-  const source = fs.readFileSync(HELPER_SOURCE, "utf8");
-  const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 12);
-  const helperDir = path.join(os.homedir(), ".memmy", "tools", "human-history-recorder");
-  const binary = path.join(helperDir, `human-recorder-${hash}`);
-  if (fs.existsSync(binary)) return binary;
-  fs.mkdirSync(helperDir, { recursive: true });
-  try {
-    await execFileAsync("swiftc", ["-O", "-o", binary, HELPER_SOURCE], { timeout: 120_000 });
-  } catch (error) {
-    throw new Error(
-      `failed to compile the macOS recorder helper (Xcode Command Line Tools required): ${(error as Error).message}`,
-    );
-  }
-  return binary;
+  return ensureNativeHistoryHelper(HELPER_SOURCE, "human-history-recorder");
 }
 
 async function helperJson(binary: string, mode: string, extraArgs: string[] = []): Promise<RecorderPermissions> {

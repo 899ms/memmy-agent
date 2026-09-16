@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { ensureNativeHistoryHelper } from "./native-helper.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -78,9 +78,8 @@ export class ApplicationIconReader {
     try {
       binary = await this.ensureHelper();
     } catch {
-      // Without the helper there is no icon to be had, but a missing Xcode
-      // toolchain is a property of the machine, not of this application, so it
-      // is not remembered as "this app has no icon".
+      // Helper availability is not a property of the requested application,
+      // so it is not remembered as "this app has no icon".
       return null;
     }
     try {
@@ -110,20 +109,10 @@ export class ApplicationIconReader {
     return null;
   }
 
-  /** Compiles the helper once and keys it by source, as the recorder helper does. */
+  /** Shares the packaged/development helper resolution with the recorder. */
   private ensureHelper(): Promise<string> {
-    this.helper ??= (async () => {
-      const source = fs.readFileSync(this.helperSource, "utf8");
-      const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 12);
-      const directory = path.join(os.homedir(), ".memmy", "tools", "app-icon");
-      const binary = path.join(directory, `app-icon-${hash}`);
-      if (fs.existsSync(binary)) return binary;
-      fs.mkdirSync(directory, { recursive: true });
-      await execFileAsync("swiftc", ["-O", "-o", binary, this.helperSource], { timeout: 120_000 });
-      return binary;
-    })().catch((error) => {
-      // Let the next request try again rather than caching the failure forever:
-      // the toolchain can be installed while the app is running.
+    this.helper ??= ensureNativeHistoryHelper(this.helperSource, "app-icon").catch((error) => {
+      // Let the next request retry after a transient development build failure.
       this.helper = null;
       throw error;
     });
