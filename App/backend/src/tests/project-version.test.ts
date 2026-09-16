@@ -11,6 +11,7 @@ describe("project version", () => {
     );
 
     expect(MEMMY_VERSION).toBe(rootManifest.version);
+    expect(MEMMY_VERSION).toBe("1.1.5");
     expect(MEMMY_VERSION).toMatch(/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/);
     for (const path of ["App/shell/desktop/package.json", "App/memmy-agent/package.json"]) {
       const consumer = JSON.parse(readFileSync(resolve(repoRoot, path), "utf8"));
