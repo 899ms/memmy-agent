@@ -243,7 +243,7 @@ export function ComputerHistorySubPage(props: ComputerHistorySubPageProps) {
     : observationState === "failed" ? t("computerHistory.recordingFailedUnknown") : null;
   const narrationError = snapshot?.observation.narrationError;
   const narrationQuotaExhausted = snapshot?.observation.narrationErrorCategory === "quota_exhausted";
-  const quotaExhausted = props.quotaExhausted || narrationQuotaExhausted;
+  const quotaExhausted = (props.quotaExhausted && snapshot?.observation.modelSource !== "byok") || narrationQuotaExhausted;
   // The window the recorder is still writing into, paused or not.
   const openEntryId = snapshot?.observation.segmentId ? `${snapshot.observation.segmentId}-10min-summary` : null;
 

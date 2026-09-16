@@ -7,6 +7,7 @@ import {
   MAX_EVIDENCE_CHARS,
   writeSegmentNarrative,
 } from "../../../../src/tools/computer-history/mac/summary-writer.js";
+import { buildSixHourSummary } from "../../../../src/tools/computer-history/mac/rollup.js";
 
 const summary = [
   "---",
@@ -84,6 +85,7 @@ describe("segment narrative", () => {
     expect(narrative?.body).toContain(`## Memory summary\n\n${description}`);
     const updated = applyNarrative(summary, narrative!);
     expect(isNarrated(updated)).toBe(true);
+    expect(updated).toContain("---\n\n# Deployment review\n\n## Memory summary");
     expect(updated).toContain(`## Recording summary\n\n${description}`);
     expect(updated).not.toContain("（尚未生成）");
     expect(updated).toContain("- segments/2026-09-08T03-30-00Z");
@@ -132,6 +134,7 @@ describe("segment narrative", () => {
     });
 
     expect(updated).toContain('title: "Notes drafting"');
+    expect(updated).toContain("---\n\n# Notes drafting\n\n## Memory summary");
     expect(updated).toContain('description: "You opened Notes and drafted a short entry."');
     expect(updated).not.toContain("Computer History 2026-09-08T03-30-00Z");
     // Everything else in the document survives untouched.
@@ -146,6 +149,49 @@ describe("segment narrative", () => {
   it("reads the applications a summary recorded", () => {
     expect(applicationsFromMarkdown(summary)).toEqual(["com.apple.Notes", "com.google.Chrome"]);
     expect(applicationsFromMarkdown("no frontmatter")).toEqual([]);
+  });
+
+  it.each(["# Old model title\n\n", "# First title\r\n\r\n# Second title\r\n\r\n", ""])(
+    "writes one authoritative H1 when regenerating a summary with model prefix %j",
+    (prefix) => {
+      const body = "## Memory summary\n\nKeep this account.\n\n### Context\n\nKeep this detail.\n\n## Recording summary\n\nKeep these steps.";
+      const narrative = { title: "检查发布版本", description: "d", body: prefix + body };
+      const updated = applyNarrative(summary, narrative);
+      expect(updated.match(/^# .+$/gmu)).toEqual(["# 检查发布版本"]);
+      expect(updated).toContain(body);
+      expect(updated.slice(updated.indexOf("## Citations"))).toBe(summary.slice(summary.indexOf("## Citations")));
+      expect(applyNarrative(updated, narrative)).toBe(updated);
+      expect(applyNarrative(updated, { ...narrative, title: "新的发布版本" }).match(/^# .+$/gmu))
+        .toEqual(["# 新的发布版本"]);
+    },
+  );
+
+  it("normalizes title whitespace and renders Markdown punctuation as literal title text", () => {
+    const updated = applyNarrative(summary, {
+      title: "  Review\r\n[draft] <v2> ##  ", description: "d", body: "## Memory summary\n\nDetails.",
+    });
+    expect(updated).toContain('title: "Review [draft] <v2> ##"');
+    expect(updated).toContain("\n# Review \\[draft\\] \\<v2\\> \\#\\#\n\n");
+    expect(updated.match(/^# .+$/gmu)).toHaveLength(1);
+  });
+
+  it("keeps a titled description fallback when the model supplies only an H1", () => {
+    const updated = applyNarrative(summary, { title: "Release review", description: "Reviewed build 218.", body: "# Model title" });
+    expect(updated).toContain("# Release review\n\n## Memory summary\n\nReviewed build 218.");
+    expect(updated).toContain("## Recording summary\n\nReviewed build 218.");
+  });
+
+  it("titles both ten-minute and six-hour summaries without changing rollup coverage or citations", () => {
+    const narrative = { title: "Release review", description: "Reviewed build 218.", body: "## Memory summary\n\nReview.\n\n## Recording summary\n\nChecked build 218." };
+    const segment = applyNarrative(summary.replace('status: completed', 'source_type: captured\nstatus: completed'), narrative);
+    const rollup = buildSixHourSummary([
+      { name: "2026-09-08T03-30-00Z-10min-summary.md", markdown: segment },
+    ], new Date("2026-09-08T00:00:00Z"))!;
+    expect(rollup).not.toBeNull();
+    const updated = applyNarrative(rollup.markdown, narrative);
+    for (const markdown of [segment, updated]) expect(markdown.match(/^# .+$/gmu)).toEqual(["# Release review"]);
+    expect(updated).toContain(`covered_history_ids: ${JSON.stringify(rollup.coveredHistoryIds)}`);
+    expect(updated.slice(updated.indexOf("## Citations"))).toBe(rollup.markdown.slice(rollup.markdown.indexOf("## Citations")));
   });
 
   it("replaces the whole body but never the citations", () => {
