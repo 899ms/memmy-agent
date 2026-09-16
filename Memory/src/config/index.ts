@@ -270,6 +270,9 @@ export interface AlgorithmConfig {
   };
 }
 
+/** Concrete languages the host app can pin memory output to. */
+export type MemoryLanguage = "zh-CN" | "en-US";
+
 export interface MemmyConfig {
   version: 1;
   domain: MemoryDomainName;
@@ -279,6 +282,8 @@ export interface MemmyConfig {
   };
   userId?: string;
   timeZone?: string;
+  /** Interface language the host app is set to, when it has one. */
+  language?: MemoryLanguage;
   storage: StorageConfig;
   summary: LlmConfig;
   evolution: LlmConfig;
@@ -628,6 +633,14 @@ function configFromEnv(): Record<string, unknown> {
   });
 }
 
+/**
+ * Anything the host cannot resolve to a concrete language is left unset, so
+ * callers fall back to reading the language from the content itself.
+ */
+function memoryLanguage(value: unknown): MemoryLanguage | undefined {
+  return value === "zh-CN" || value === "en-US" ? value : undefined;
+}
+
 function normalizeConfig(input: Record<string, unknown>): MemmyConfig {
   const storage = normalizeStorage(asRecord(input.storage));
   const summary = {
@@ -650,6 +663,7 @@ function normalizeConfig(input: Record<string, unknown>): MemmyConfig {
     domain: memoryDomainName(input.domain, DEFAULT_MEMMY_CONFIG.domain),
     roleRouting: normalizeRoleRouting(asRecord(input.roleRouting)),
     userId: optionalString(input.userId),
+    ...(memoryLanguage(input.language) ? { language: memoryLanguage(input.language)! } : {}),
     storage,
     summary,
     evolution,
