@@ -99,6 +99,7 @@ export type ComputerHistorySnapshot = {
     error: string | null;
     narrationError: string | null;
     narrationErrorCategory?: "quota_exhausted" | null;
+    modelSource?: "account" | "byok" | null;
     permissions?: ComputerHistoryPermissions;
   };
   histories: ComputerHistoryEntry[];
@@ -709,6 +710,7 @@ export interface MemmyAgentClient {
   bootstrap(options?: { force?: boolean }): Promise<MemmyAgentBootstrap>;
   getSettings(): Promise<MemmyAgentSettings>;
   getComputerHistory(): Promise<ComputerHistorySnapshot>;
+  setComputerHistoryModel(preset: string | null): Promise<ComputerHistorySnapshot>;
   checkComputerHistoryPermissions(): Promise<ComputerHistoryPermissions>;
   openComputerHistoryPermission(permission: ComputerHistoryPermission, mode?: "request" | "settings"): Promise<ComputerHistoryPermissions>;
   deleteComputerHistory(historyId: string): Promise<ComputerHistorySnapshot>;
@@ -1058,6 +1060,12 @@ class HttpMemmyAgentClient implements MemmyAgentClient {
 
   async getSettings(): Promise<MemmyAgentSettings> {
     return this.request("/api/settings", AgentSettingsSchema);
+  }
+
+  async setComputerHistoryModel(preset: string | null): Promise<ComputerHistorySnapshot> {
+    return this.request("/api/computer-history/model", ComputerHistorySnapshotSchema, {
+      method: "POST", body: { model_preset: preset },
+    });
   }
 
   async getComputerHistory(): Promise<ComputerHistorySnapshot> {

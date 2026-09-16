@@ -119,6 +119,14 @@ describe("ComputerHistorySubPage", () => {
     expect(container.textContent).toContain("My recording");
   });
 
+  it("ignores exhausted account tokens once History is using the selected BYOK model", async () => {
+    const client = await renderWith(snapshot({ observation: { ...snapshot().observation, state: "running", modelSource: "byok" } }));
+    await act(async () => root.render(page(client, true)));
+    expect(container.querySelector(".ch__recording-status")?.textContent).toBe("记录中");
+    expect(container.querySelector(".ch__quota-description")).toBeNull();
+    expect(container.textContent).toContain("My recording");
+  });
+
   it("shows BYOK quota errors without an account balance, retains history, and recovers", async () => {
     vi.useFakeTimers();
     const initial = snapshot({ observation: { ...snapshot().observation, state: "running",

@@ -79,6 +79,43 @@ afterEach(async () => {
 });
 
 describe("summary retries and atomic replacement", () => {
+  it("immediately retries the active segment with BYOK while the old account request is pending", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root, segmentId, false);
+    internal(service).segment = segment;
+    (service as unknown as { observationState: string }).observationState = "running";
+    fs.appendFileSync(segment.eventsFile, " ".repeat(4_100));
+    const account = deferred();
+    internal(service).llmRuntime = runtime(() => account.promise);
+    internal(service).writeLiveSummary(segment);
+    const byok = vi.fn(async () => response("Fresh BYOK activity"));
+    service.setLlmRuntime(runtime(byok), "byok");
+    await vi.waitFor(() => expect(service.snapshot().histories[0]?.title).toBe("Fresh BYOK activity"));
+    expect(service.snapshot().observation.state).toBe("running");
+    account.resolve({ content: "agent_chat tokens exhausted", errorCategory: "quota_exhausted" } as any);
+    await account.promise;
+    await Promise.resolve();
+    expect(service.snapshot().observation.narrationErrorCategory).toBeNull();
+  });
+
+  it("switches a pending account summary to BYOK without waiting for the old model", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root);
+    const oldModel = deferred();
+    internal(service).llmRuntime = runtime(() => oldModel.promise);
+    const oldRequest = internal(service).finalizeSegment(segment);
+    const byok = vi.fn(async () => response("BYOK recovered"));
+    service.setLlmRuntime(runtime(byok), "byok");
+    await service.backfillUnwrittenSummaries();
+    expect(byok).toHaveBeenCalled();
+    expect(service.snapshot().observation).toMatchObject({ modelSource: "byok", narrationError: null });
+    expect(service.snapshot().histories.some((entry) => entry.title === "BYOK recovered")).toBe(true);
+    oldModel.resolve({ content: "Account quota exhausted", errorCategory: "quota_exhausted" } as any);
+    await oldRequest;
+    expect(service.snapshot().observation.narrationErrorCategory).toBeNull();
+    expect(service.snapshot().histories.some((entry) => entry.title === "BYOK recovered")).toBe(true);
+  });
+
   it("exposes BYOK quota exhaustion and clears it when the same provider recovers", async () => {
     const { root, service } = serviceAt();
     const segment = seed(root);

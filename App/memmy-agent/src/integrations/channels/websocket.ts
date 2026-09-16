@@ -1,3 +1,4 @@
+import { staticLlmRuntime } from "../../utils/llm-runtime.js";
 import crypto from "node:crypto";
 import * as childProcess from "node:child_process";
 import fs from "node:fs";
@@ -680,6 +681,7 @@ export class WebSocketChannel extends BaseChannel {
   staticDistPath: string | null = null;
   runtimeModelName: RuntimeModelNameResolver = null;
   runtimeToolNames: RuntimeToolNamesResolver = null;
+  private computerHistoryModelSignature: string | null = null;
   modelSelectionResolver: WebSocketChannelOptions["modelSelectionResolver"] = null;
   workspacePath: string;
   readonly fileMemoryEnabled: boolean;
@@ -2734,6 +2736,7 @@ export class WebSocketChannel extends BaseChannel {
     if (got === "/api/computer-history/permissions/check") return this.handleComputerHistory(request, "permissions-check");
     if (got === "/api/computer-history/permissions/open") return this.handleComputerHistory(request, "permissions-open");
     if (got === "/api/computer-history/delete") return this.handleComputerHistory(request, "history-delete");
+    if (got === "/api/computer-history/model") return this.handleComputerHistory(request, "model-select");
     if (got === "/api/computer-history/clear") return this.handleComputerHistory(request, "history-clear");
     if (got === "/api/computer-history/pin") return this.handleComputerHistory(request, "history-pin");
     if (got === "/api/computer-history/import") return this.handleComputerHistory(request, "import");
@@ -2902,7 +2905,7 @@ export class WebSocketChannel extends BaseChannel {
 
   async handleComputerHistory(
     request: any,
-    action: "snapshot" | "permissions-check" | "permissions-open" | "history-delete" | "history-clear" | "history-pin" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create",
+    action: "snapshot" | "model-select" | "permissions-check" | "permissions-open" | "history-delete" | "history-clear" | "history-pin" | "import" | "observation-start" | "observation-pause" | "observation-resume" | "observation-stop" | "workflow-create",
   ): Promise<HttpLikeResponse> {
     if (!this.checkApiToken(request)) return httpError(401, "Unauthorized");
     const method = (request.method ?? "GET").toUpperCase();
@@ -2929,6 +2932,26 @@ export class WebSocketChannel extends BaseChannel {
     try {
       let snapshot;
       switch (action) {
+        case "model-select": {
+          if (body.model_preset !== null && (typeof body.model_preset !== "string" || !body.model_preset.trim())) {
+            throw new ComputerHistoryApiError(422, "model_preset must be a preset ID or null");
+          }
+          const selection = this.modelSelectionResolver?.({ requestedPreset: body.model_preset });
+          if (!selection) throw new ComputerHistoryApiError(422, "model_selection_unavailable");
+          // Include credentials/configuration through the provider signature, but
+          // retain only a digest. Repeated syncs must not restart model requests.
+          const signature = crypto.createHash("sha256").update(JSON.stringify([
+            selection.presetId, selection.source, selection.ownerAccountId, selection.snapshot.signature,
+          ])).digest("hex");
+          if (signature !== this.computerHistoryModelSignature) {
+            this.computerHistory.setLlmRuntime(
+              staticLlmRuntime(selection.snapshot.provider, selection.snapshot.model), selection.source,
+            );
+            this.computerHistoryModelSignature = signature;
+          }
+          snapshot = this.computerHistory.snapshot();
+          break;
+        }
         case "history-delete":
           snapshot = this.computerHistory.deleteHistory(String(body.history_id ?? ""));
           break;

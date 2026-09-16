@@ -88,6 +88,7 @@ export interface ComputerHistorySnapshot {
     /** Why the last summary kept its mechanical wording, if it did. */
     narrationError: string | null;
     narrationErrorCategory?: "quota_exhausted" | null;
+    modelSource?: "account" | "byok" | null;
     permissions?: HistoryPermissions;
   };
 
@@ -332,6 +333,7 @@ export class ComputerHistoryDemoService {
   }>();
   private narrationError: string | null = null;
   private narrationErrorCategory: "quota_exhausted" | null = null;
+  private modelSource: "account" | "byok" | null = null;
   /** Segments already narrated while still open, so it happens once, not per tick. */
   private readonly narratedOpenSegments = new Set<string>();
   private readonly markdownCache = new Map<string, Map<string, CachedEntry>>();
@@ -409,9 +411,12 @@ export class ComputerHistoryDemoService {
   }
 
   /** Supplies the model used to narrate finalized segments. */
-  setLlmRuntime(llmRuntime: LLMRuntimeResolver | null): void {
+  setLlmRuntime(llmRuntime: LLMRuntimeResolver | null, source: "account" | "byok" | null = null): void {
+    this.modelSource = source;
     if (this.llmRuntime !== llmRuntime) {
       this.backfill = null;
+      this.summaryJobs.clear();
+      this.narratedOpenSegments.clear();
       this.setNarrationError(null);
     }
     this.llmRuntime = llmRuntime;
@@ -421,6 +426,7 @@ export class ComputerHistoryDemoService {
     // Realign first so the rebuilt rollups are among what the backfill writes.
     this.realignRollups();
     this.retrySummariesInBackground();
+    if (this.segment && this.observationState === "running") this.writeLiveSummary(this.segment);
   }
 
   private setNarrationError(reason: string | null, category?: "quota_exhausted"): void {
@@ -533,6 +539,7 @@ export class ComputerHistoryDemoService {
         error: this.observationError,
         narrationError: this.narrationError,
         narrationErrorCategory: this.narrationErrorCategory,
+        modelSource: this.modelSource,
         ...(this.permissions ? { permissions: this.permissions } : {}),
       },
       histories: [

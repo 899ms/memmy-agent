@@ -6,7 +6,7 @@ import { MessageBus } from "../../../src/core/runtime-messages/index.js";
 import { WebSocketChannel } from "../../../src/integrations/channels/websocket.js";
 import { ComputerHistoryDemoService, type ComputerHistorySnapshot } from "../../../src/tools/computer-history/mac/computer-history-api.js";
 
-const history = vi.hoisted(() => ({ clearHistories: vi.fn(), pinSegment: vi.fn(), checkPermissions: vi.fn(), openPermission: vi.fn(), startObservationWithPermissions: vi.fn() }));
+const history = vi.hoisted(() => ({ snapshot: vi.fn(), setLlmRuntime: vi.fn(), clearHistories: vi.fn(), pinSegment: vi.fn(), checkPermissions: vi.fn(), openPermission: vi.fn(), startObservationWithPermissions: vi.fn() }));
 
 // Keep routing, authentication and clientSnapshot real without constructing a
 // service that can read or remove the user's Computer History files.
@@ -16,6 +16,8 @@ vi.mock("../../../src/tools/computer-history/mac/computer-history-api.js", async
 }));
 
 afterEach(() => {
+  history.snapshot.mockReset();
+  history.setLlmRuntime.mockReset();
   history.clearHistories.mockReset();
   history.pinSegment.mockReset();
   history.checkPermissions.mockReset();
@@ -165,5 +167,46 @@ describe("Computer History permissions HTTP boundary", () => {
     expect(response?.status).toBe(200);
     expect(history.startObservationWithPermissions).toHaveBeenCalledWith(...(action === "resume" ? [true] : []));
     expect(JSON.parse(String(response?.body)).observation.permissions).toEqual(result.observation.permissions);
+  });
+});
+
+
+describe("Computer History model selection", () => {
+  it("resolves the explicitly selected BYOK model and only refreshes when its config changes", async () => {
+    const instance = channel();
+    const provider = { chatWithRetry: vi.fn() };
+    let revision = "key-1";
+    instance.modelSelectionResolver = vi.fn(() => ({
+      presetId: "custom-model", source: "byok", ownerAccountId: null,
+      snapshot: { provider, model: "custom-model", signature: [revision] },
+    }) as any);
+    history.snapshot.mockReturnValue(snapshot());
+    const input = request({ path: "/api/computer-history/model", body: JSON.stringify({ model_preset: "custom-model" }) });
+    expect((await instance.dispatchHttp({}, input))?.status).toBe(200);
+    expect(instance.modelSelectionResolver).toHaveBeenCalledWith({ requestedPreset: "custom-model" });
+    expect(history.setLlmRuntime).toHaveBeenCalledOnce();
+    expect(history.setLlmRuntime.mock.calls[0][1]).toBe("byok");
+    expect(history.setLlmRuntime.mock.calls[0][0]()).toMatchObject({ provider, model: "custom-model" });
+    await instance.dispatchHttp({}, input);
+    expect(history.setLlmRuntime).toHaveBeenCalledOnce();
+    revision = "key-2";
+    await instance.dispatchHttp({}, input);
+    expect(history.setLlmRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([undefined, "", 42, {}])("rejects an invalid preset %j", async (model_preset) => {
+    const result = await channel().dispatchHttp({}, request({ path: "/api/computer-history/model", body: JSON.stringify({ model_preset }) }));
+    expect(result?.status).toBe(422);
+    expect(history.setLlmRuntime).not.toHaveBeenCalled();
+  });
+
+  it("requires authentication and refuses unavailable selections", async () => {
+    const instance = channel();
+    instance.modelSelectionResolver = vi.fn(() => null);
+    const input = request({ path: "/api/computer-history/model", body: JSON.stringify({ model_preset: "removed" }) });
+    expect((await instance.dispatchHttp({}, { ...input, headers: {} }))?.status).toBe(401);
+    expect(instance.modelSelectionResolver).not.toHaveBeenCalled();
+    expect((await instance.dispatchHttp({}, input))?.status).toBe(422);
+    expect(history.setLlmRuntime).not.toHaveBeenCalled();
   });
 });

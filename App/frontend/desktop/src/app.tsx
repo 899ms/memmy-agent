@@ -1,3 +1,4 @@
+import { useComputerHistoryModelSync } from "./app/computer-history-model-sync.js";
 /** App module. */
 import { SseEventSchema, type AccountSessionView, type SseEvent } from "@memmy/local-api-contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -66,6 +67,14 @@ export function App() {
 function RuntimeApp() {
   const { state, dispatch } = useAppState();
   const { clients, setClients } = useApiClients();
+  const historyModelScope = state.agent.currentChatId ?? "draft-new-task";
+  useComputerHistoryModelSync({
+    client: clients?.memmyAgent ?? null,
+    enabled: Boolean(state.bootstrap && state.modelConfig),
+    preset: state.agent.pendingPresetByScope[historyModelScope]
+      ?? state.agent.committedModelSelectionByScope[historyModelScope]?.presetId ?? null,
+    revision: JSON.stringify([state.bootstrap?.app.userMode, state.account.userId, state.modelConfig?.configRevision]),
+  });
   const { track } = useAnalytics();
   const { t } = useTranslation();
   const translationRef = useRef(t);
