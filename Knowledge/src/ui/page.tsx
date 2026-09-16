@@ -96,6 +96,8 @@ export function KnowledgePage({
   const [dragOver, setDragOver] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
   const [revokeTarget, setRevokeTarget] = useState<KnowledgeMember | null>(null);
   const [fileDeleteTarget, setFileDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [page, setPage] = useState(1);
@@ -512,6 +514,17 @@ export function KnowledgePage({
                                 <button
                                   type="button"
                                   role="menuitem"
+                                  onClick={() => {
+                                    setMenuOpen(false);
+                                    setRenameName(active.name);
+                                    setRenameOpen(true);
+                                  }}
+                                >
+                                  {t("重命名知识库", "Rename knowledge base")}
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
                                   className="mk-menu-danger"
                                   onClick={() => {
                                     setMenuOpen(false);
@@ -750,6 +763,7 @@ export function KnowledgePage({
         )}
       </div>
       {settings && createOpen && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true"><button className="mk-modal-close" onClick={() => setCreateOpen(false)}>×</button><h2>{t("新建知识库", "New knowledge base")}</h2><p>{t("创建一个新的个人知识库。", "Create a personal knowledge base.")}</p><form onSubmit={(event) => { event.preventDefault(); void run(async () => { acceptSettings(await api<KnowledgeSettings>("/bases", "POST", { name })); setName(""); setCreateOpen(false); }); }}><label>{t("名称", "Name")}<input value={name} onChange={(event) => setName(event.target.value)} maxLength={200} required autoFocus /></label><div className="mk-modal-actions"><button type="button" onClick={() => setCreateOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit" disabled={!settings.serviceAvailable}>{t("创建", "Create")}</button></div></form></div></div>}
+      {settings && renameOpen && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-rename-title"><button className="mk-modal-close" onClick={() => setRenameOpen(false)}>×</button><h2 id="mk-rename-title">{t("重命名知识库", "Rename knowledge base")}</h2><p>{t("新名称会同步给所有已共享的用户，对方刷新后即可看到。", "The new name syncs to everyone this base is shared with once they refresh.")}</p><form onSubmit={(event) => { event.preventDefault(); const value = renameName.trim(); if (!value || value === active.name) { setRenameOpen(false); return; } void run(async () => { acceptSettings(await api<KnowledgeSettings>(`/bases/${encodeURIComponent(active.id)}`, "PATCH", { name: value })); setRenameName(""); setRenameOpen(false); setNotice(t("已重命名，共享用户刷新后即可看到新名称。", "Renamed. Shared users will see the new name after refreshing.")); }); }}><label>{t("名称", "Name")}<input value={renameName} onChange={(event) => setRenameName(event.target.value)} maxLength={200} required autoFocus /></label><div className="mk-modal-actions"><button type="button" onClick={() => setRenameOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit" disabled={!renameName.trim() || renameName.trim() === active.name}>{t("保存", "Save")}</button></div></form></div></div>}
       {revokeTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-revoke-title"><button className="mk-modal-close" onClick={() => setRevokeTarget(null)}>×</button><h2 id="mk-revoke-title">{t("取消分享", "Unshare knowledge base")}</h2><p>{t(`确定取消与“${revokeTarget.name}（${revokeTarget.userId}）”的共享吗？对方刷新后将无法继续访问此知识库。`, `Unshare this knowledge base from “${revokeTarget.name} (${revokeTarget.userId})”? They will lose access after refreshing.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setRevokeTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const target = revokeTarget; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/members/${encodeURIComponent(target.userId)}`, "DELETE"); setMembers((current) => current.filter((item) => item.userId !== target.userId)); setRevokeTarget(null); acceptSettings(await api<KnowledgeSettings>("/settings")); setNotice(t("已取消分享。", "Sharing cancelled.")); }); }}>{t("确认取消分享", "Unshare")}</button></div></div></div>}
       {deleteOpen && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-delete-title"><button className="mk-modal-close" onClick={() => setDeleteOpen(false)}>×</button><h2 id="mk-delete-title">{t("删除知识库", "Delete knowledge base")}</h2><p>{t("彻底删除此知识库及全部文件？这会同时删除 MemOS 中的数据，删除后无法恢复。", "Permanently delete this knowledge base and all its files? This also deletes the data in MemOS and cannot be undone.")}</p><div className="mk-modal-actions"><button type="button" onClick={() => setDeleteOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const id = active.id; void run(async () => { acceptSettings(await api<KnowledgeSettings>(`/bases/${encodeURIComponent(id)}`, "DELETE")); setActiveId(""); setDetailOpen(false); setDeleteOpen(false); setPage(1); }); }}>{t("确认删除", "Delete")}</button></div></div></div>}
       {fileDeleteTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-file-delete-title"><button className="mk-modal-close" onClick={() => setFileDeleteTarget(null)}>×</button><h2 id="mk-file-delete-title">{t("删除文件", "Delete file")}</h2><p>{t(`从云端删除“${fileDeleteTarget.name}”？此操作也会影响该知识库的其他使用方。`, `Delete “${fileDeleteTarget.name}” from the cloud? This also affects other users of this knowledge base.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setFileDeleteTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const target = fileDeleteTarget; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/files/${encodeURIComponent(target.id)}`, "DELETE", { page }); setFileDeleteTarget(null); setRefresh((value) => value + 1); }); }}>{t("确认删除", "Delete")}</button></div></div></div>}

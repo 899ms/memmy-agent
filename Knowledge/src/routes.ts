@@ -54,6 +54,22 @@ export function registerKnowledgeRoutes(
           throw new KnowledgeError("仅支持创建当前账户的知识库");
         return parseSettings(await client.request("/bases", "POST", body));
       });
+      scoped.patch<{ Params: { id: string } }>("/bases/:id", async (request) => {
+        const body = record(request.body);
+        if (
+          Object.keys(body).some((key) => key !== "name") ||
+          !text(body.name).trim() ||
+          text(body.name).trim().length > 200
+        )
+          throw new KnowledgeError("知识库名称无效");
+        return parseSettings(
+          await client.request(
+            `/bases/${encodeURIComponent(request.params.id)}`,
+            "PATCH",
+            { name: text(body.name).trim() },
+          ),
+        );
+      });
       scoped.delete<{ Params: { id: string } }>("/bases/:id", async (request) =>
         parseSettings(
           await client.request(

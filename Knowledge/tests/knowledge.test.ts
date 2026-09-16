@@ -25,6 +25,7 @@ const settings = {
   enabled: true,
   serviceAvailable: true,
   bases: [{ id: "owned", name: "资料", selected: true }],
+  maxBases: 10,
 };
 const evidence = [
   { id: "source-1", title: "差旅制度", content: "住宿上限 500 元" },
@@ -48,6 +49,7 @@ it("does not access cloud or expose stale bases when signed out", async () => {
     enabled: false,
     serviceAvailable: false,
     bases: [],
+    maxBases: 10,
   });
   expect(await client.recall("question")).toEqual({
     enabled: false,
@@ -262,7 +264,42 @@ it("local routes require auth, reject credential overrides and have no reveal en
         })
       ).statusCode,
     ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/knowledge/bases/owned",
+          headers,
+          payload: { name: "新名称", id: "foreign" },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/api/knowledge/bases/owned",
+          headers,
+          payload: { name: "   " },
+        })
+      ).statusCode,
+    ).toBe(400);
     expect(fetcher).not.toHaveBeenCalled();
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: "/api/knowledge/bases/owned",
+      headers,
+      payload: { name: "新名称" },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toEqual(settings);
+    const [renameUrl, renameInit] = fetcher.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(renameUrl).toBe("https://cloud.example/api/knowledge/bases/owned");
+    expect(renameInit.method).toBe("PATCH");
+    expect(renameInit.body).toBe(JSON.stringify({ name: "新名称" }));
     const response = await app.inject({
       method: "GET",
       url: "/api/knowledge/settings",
