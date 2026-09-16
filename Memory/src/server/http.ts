@@ -30,6 +30,10 @@ import { MemoryService } from "../service/memory-service.js";
 import { MemoryServiceError, statusForCode } from "../utils/error.js";
 import { resolveTimeZone } from "../utils/time.js";
 import {
+  createMemoryDesktopAddAnalytics,
+  type MemoryDesktopAddAnalytics,
+} from "./memory-add-analytics.js";
+import {
   createPluginRuntimeAnalytics,
   hitCountFromGetResponse,
   hitCountFromSearchResponse,
@@ -94,6 +98,10 @@ export interface MemoryHttpServerOptions {
   workerPostHealthDelayMs?: number;
   onShutdownRequested?: () => void;
   pluginRuntimeAnalytics?: PluginRuntimeAnalytics;
+  memoryAddAnalytics?: Pick<
+    MemoryDesktopAddAnalytics,
+    "trackAddStarted" | "trackAddSucceeded" | "trackAddFailed"
+  >;
   configPath?: string;
   viewerCli?: ViewerCliOptions;
   onRestartRequested?: () => void | Promise<void>;
@@ -137,10 +145,12 @@ export function createMemoryHttpServer(options: MemoryHttpServerOptions): Server
     postHealthDelayMs: options.workerPostHealthDelayMs ?? DEFAULT_WORKER_POST_HEALTH_DELAY_MS
   });
   const pluginRuntimeAnalytics = options.pluginRuntimeAnalytics ?? createPluginRuntimeAnalytics();
+  const memoryAddAnalytics = options.memoryAddAnalytics ?? createMemoryDesktopAddAnalytics();
   const agentSources = options.agentSourceExecutor ?? createAgentSourceExecutor({
     service: options.service,
     configPath: options.configPath,
-    scheduleWorker: autoWorker.schedule
+    scheduleWorker: autoWorker.schedule,
+    memoryAddAnalytics
   });
   const activeRequests = new Set<Promise<void>>();
   const server = createServer((request, response) => {
