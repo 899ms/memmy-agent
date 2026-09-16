@@ -1,7 +1,7 @@
 import { MAX_UPLOAD_BYTES } from "../types.js";
 
 export const DOCUMENT_EXTENSIONS =
-  ".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.csv,.pptx,.ppt";
+  ".pdf,.docx,.doc,.txt,.json,.md,.xml";
 export interface UploadResult {
   name: string;
   ok: boolean;
@@ -23,9 +23,11 @@ export async function uploadDocuments(
         throw new Error(
           zh ? "文件为空或超过 20 MB" : "File is empty or exceeds 20 MB",
         );
-      if (!/\.(pdf|docx|doc|txt|md|xlsx|xls|csv|pptx|ppt)$/i.test(file.name))
+      if (!/\.(pdf|docx|doc|txt|json|md|xml)$/i.test(file.name))
         throw new Error(
-          zh ? "不支持的文档格式" : "Unsupported document format",
+          zh
+            ? "不支持的文档格式（支持 PDF、Word、TXT、Markdown、JSON、XML）"
+            : "Unsupported file type (supported: PDF, Word, TXT, Markdown, JSON, XML)",
         );
       const content = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();

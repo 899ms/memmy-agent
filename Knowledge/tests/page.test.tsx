@@ -50,7 +50,12 @@ it("shows management only, with recall off by default and no exposed saved secre
       />,
     );
   });
-  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  const toggle = [
+    ...container.querySelectorAll<HTMLButtonElement>('[role="switch"]'),
+  ].find((item) =>
+    (item.getAttribute("aria-label") ?? "").includes("差旅制度"),
+  )!;
+  expect(toggle).toBeDefined();
   expect(toggle.getAttribute("aria-checked")).toBe("false");
   expect(toggle.disabled).toBe(false);
   expect(container.textContent).toContain("差旅制度");
@@ -59,9 +64,9 @@ it("shows management only, with recall off by default and no exposed saved secre
     container.querySelector<HTMLInputElement>('input[type="file"]')!;
   expect(fileInput.multiple).toBe(true);
   expect(fileInput.hidden).toBe(true);
-  const dropzone = container.querySelector<HTMLElement>(".mk-drop")!;
-  expect(dropzone.textContent).toContain("选择文件");
-  expect(dropzone.textContent).toContain("每个文件最多 20 MB");
+  const emptyCta = container.querySelector<HTMLElement>(".mk-empty-cta")!;
+  expect(emptyCta.textContent).toContain("上传文件");
+  expect(container.textContent).toContain("每个文件最多 20 MB");
   expect(container.querySelector('input[type="password"]')).toBeNull();
   expect(container.textContent).not.toContain("API Key");
   expect(container.textContent).not.toContain("MemOS 云服务连接");
