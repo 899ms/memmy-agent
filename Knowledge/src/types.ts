@@ -21,6 +21,12 @@ export interface KnowledgeFile {
   status: string;
   message: string;
 }
+export interface KnowledgeFolder {
+  id: string;
+  /** 父目录 id，空字符串表示位于知识库根目录。 */
+  parentId: string;
+  name: string;
+}
 export interface KnowledgeFiles {
   files: KnowledgeFile[];
   total: number;
