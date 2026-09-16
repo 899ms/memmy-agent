@@ -22,6 +22,7 @@ files:
 
 asar: true
 asarUnpack:
+  - "dist/runtime/memmy-agent/dist/tools/computer-history/mac/native/**"
   - "**/node_modules/open-computer-use/dist/**"
   - "**/*.node"
   - "**/onnxruntime-node/bin/napi-v3/darwin/**/*.dylib"

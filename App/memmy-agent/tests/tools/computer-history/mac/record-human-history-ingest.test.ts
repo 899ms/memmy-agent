@@ -12,6 +12,9 @@ const helper = vi.hoisted(() => ({
   afterEvent: undefined as ((index: number) => void) | undefined,
   onCommand: undefined as ((command: string, args: string[]) => void) | undefined,
 }));
+vi.mock("../../../../src/tools/computer-history/mac/native-helper.js", () => ({
+  ensureNativeHistoryHelper: async () => "/fixture/human-recorder",
+}));
 vi.mock("node:child_process", async () => {
   const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
   const { promisify } = await import("node:util");
@@ -56,8 +59,6 @@ beforeEach(() => {
   helper.onCommand = undefined;
   directory = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-ingest-"));
   Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
-  const exists = fs.existsSync;
-  vi.spyOn(fs, "existsSync").mockImplementation((file) => String(file).includes("human-recorder-") || exists(file));
   vi.spyOn(console, "log").mockImplementation(() => {});
   existingSignals = new Map(["SIGINT", "SIGTERM"].map((signal) => [signal, process.listeners(signal)]));
 });
