@@ -14,7 +14,7 @@ export function SocialLoginButtons(props: SocialLoginButtonsProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="mt-4 space-y-2.5">
+    <div className="hidden mt-4 space-y-2.5">
       <div className="flex flex-col gap-3">
         <SocialLoginButton
           label={props.pendingProvider === "google" ? t("login.social.opening") : t("login.social.google")}
