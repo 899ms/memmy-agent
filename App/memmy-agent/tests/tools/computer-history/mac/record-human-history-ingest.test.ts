@@ -53,7 +53,7 @@ import { run } from "../../../../src/tools/computer-history/mac/record-human-his
 
 const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
 let directory: string;
-let existingSignals: Map<string, Function[]>;
+let existingSignals: Map<string, ((...args: unknown[]) => unknown)[]>;
 beforeEach(() => {
   helper.afterEvent = undefined;
   helper.onCommand = undefined;

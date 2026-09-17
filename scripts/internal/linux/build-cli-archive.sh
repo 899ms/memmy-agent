@@ -101,6 +101,7 @@ cp "$REPO_ROOT/package-lock.json" "$PAYLOAD_DIR/package-lock.json"
 cp "$REPO_ROOT/App/memmy-agent/package.json" "$PAYLOAD_DIR/App/memmy-agent/package.json"
 cp "$REPO_ROOT/App/memmy-agent/package-lock.json" "$PAYLOAD_DIR/App/memmy-agent/package-lock.json"
 cp -R "$REPO_ROOT/App/memmy-agent/dist" "$PAYLOAD_DIR/App/memmy-agent/dist"
+node "$REPO_ROOT/scripts/internal/shared/check-office-slim-assets.mjs" "$PAYLOAD_DIR/App/memmy-agent"
 node "$REPO_ROOT/scripts/internal/linux/bundle-open-computer-use.mjs" \
   "$REPO_ROOT/App/memmy-agent/node_modules/open-computer-use" \
   "$PAYLOAD_DIR/App/memmy-agent"

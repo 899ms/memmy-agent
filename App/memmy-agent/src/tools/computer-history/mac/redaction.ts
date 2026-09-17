@@ -13,5 +13,9 @@ export function redactSensitive(value: unknown): string {
         const quote = secret[0] === '"' || secret[0] === "'" ? secret[0] : "";
         return `${prefix}${quote}[REDACTED]${quote}`;
       },
-    );
+    )
+    // Accessibility values and window text can contain a credential-looking
+    // token without a key/value label (for example `demo-secret-value-123`).
+    // Mask those structured secret tokens while leaving ordinary prose intact.
+    .replace(/\b[a-z0-9]+[-_](?:secret|token)(?:[-_][a-z0-9]+)+\b/gi, "[REDACTED]");
 }

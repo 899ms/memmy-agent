@@ -507,7 +507,7 @@ export function applyNarrative(markdown: string, narrative: SegmentNarrative): s
     ...body,
     "summary_state: ready",
   ].join("\n");
-  let updated = markdown.replace(FRONTMATTER, `---\n${rewritten}\n---`);
+  const updated = markdown.replace(FRONTMATTER, `---\n${rewritten}\n---`);
 
   // Citations name the evidence and are not the model's to write, so they are
   // the boundary: everything above them is the account, everything from them

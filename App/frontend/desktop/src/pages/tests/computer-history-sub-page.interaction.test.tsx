@@ -288,8 +288,12 @@ describe("ComputerHistorySubPage", () => {
     };
     // A rollup whose six hours have not elapsed is still being rewritten, so
     // the segments under it are the better account and it stays out of the way.
-    const openWindow = new Date(Date.now() - 60 * 60_000);
-    const segment = new Date(Date.now() - 30 * 60_000);
+    // Anchor the fixture at local noon so the assertion remains stable when
+    // the suite runs around midnight in UTC or in the developer's timezone.
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const openWindow = new Date(now.getTime() - 60 * 60_000);
+    const segment = new Date(now.getTime() - 30 * 60_000);
     await renderWith(snapshot({
       histories: [
         { ...base, id: "rollup", title: "A whole window", description: "Overview.", sourceType: "rollup", summaryWindow: "6h" as const, coveredHistoryIds: ["moment"], createdAt: openWindow.toISOString() },

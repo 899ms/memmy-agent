@@ -7,10 +7,8 @@
  */
 import { z } from "zod";
 import {
-  ComputerHistoryEntrySchema,
   ApplicationIconSchema,
   ComputerHistorySnapshotSchema,
-  ComputerHistoryWorkflowSchema,
   ComputerHistoryPermissionsSchema,
   type ComputerHistoryPermission,
   type ComputerHistoryPermissions,

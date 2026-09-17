@@ -768,11 +768,17 @@ export async function connectMcpServers(
     } catch (error) {
       console.error(`MCP server '${name}': failed to connect: ${String((error as Error).message ?? error)}`);
       const text = String((error as Error).message ?? error).toLowerCase();
-      if (["parse error", "invalid json", "unexpected token", "jsonrpc", "content-length"].some((marker) => text.includes(marker))) {
+      const protocolPollution = ["parse error", "invalid json", "unexpected token", "jsonrpc", "content-length"]
+        .some((marker) => text.includes(marker));
+      if (protocolPollution) {
         console.error(
           `MCP server '${name}': failed to connect. Hint: this looks like stdio protocol pollution. ` +
             "Make sure the MCP server writes only JSON-RPC to stdout and sends logs/debug output to stderr instead.",
         );
+      } else if (text.includes("cannot connect") || text.includes("spawn")) {
+        // Surface launcher failures without turning ordinary server errors into
+        // an extra log line that can hide the actionable pollution hint.
+        console.error(String((error as Error).message ?? error));
       }
       for (const close of closers.reverse()) await close().catch(() => undefined);
     }

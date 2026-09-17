@@ -272,7 +272,7 @@ function knownMcpNames(): Set<string> {
   const names = knownPresetNames();
   try {
     for (const name of Object.keys(loadConfig().tools.mcpServers)) names.add(name);
-  } catch {}
+  } catch { /* ignore malformed optional input */ }
   return names;
 }
 
@@ -987,7 +987,7 @@ function closeMcpStacks(stacks: Record<string, any>): Promise<void> {
     try {
       if (typeof stack?.aclose === "function") await stack.aclose();
       else if (typeof stack?.close === "function") await stack.close();
-    } catch {}
+    } catch { /* ignore malformed optional input */ }
   })).then(() => undefined);
 }
 

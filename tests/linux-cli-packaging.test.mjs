@@ -271,6 +271,12 @@ describe("Linux CLI package boundary", () => {
     expect(installer).not.toMatch(/nohup|disown|pkill|killall|enable-linger/);
   });
 
+  it("omits the Office rendering payload from the candidate archive", () => {
+    const builder = readFileSync(builderPath, "utf8");
+    expect(builder).not.toContain("office-rendering");
+    expect(builder).not.toContain("ALLOW_MISSING_OFFICE_PAYLOAD");
+  });
+
   it("installs standalone Agent dependencies before Linux archive contract tests", () => {
     const linuxWorkflow = readFileSync(linuxWorkflowPath, "utf8");
     const agentInstall = "run: npm ci --prefix App/memmy-agent";
@@ -293,7 +299,9 @@ describe("Linux CLI package boundary", () => {
     const result = spawnSync("bash", [builderPath, "--output", output], {
       cwd: repoRoot,
       encoding: "utf8",
-      env: cleanNpmLifecycleEnv({ MEMMY_EMBEDDING_MODEL_SOURCE_DIR: path.dirname(path.dirname(modelSource)) }),
+      env: cleanNpmLifecycleEnv({
+        MEMMY_EMBEDDING_MODEL_SOURCE_DIR: path.dirname(path.dirname(modelSource)),
+      }),
     });
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
 
