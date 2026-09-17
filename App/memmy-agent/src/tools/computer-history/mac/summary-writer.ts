@@ -102,7 +102,7 @@ export interface NarrativeRequest {
   priorSummaries?: string[];
   modelPreset?: string | null;
   /** Reports why narration produced nothing, so it cannot fail invisibly. */
-  onError?: (reason: string) => void;
+  onError?: (reason: string, category?: "quota_exhausted") => void;
 }
 
 /**
@@ -161,6 +161,14 @@ export async function writeSegmentNarrative(
       retryMode: "standard",
     });
     const text = typeof response?.content === "string" ? response.content : "";
+    if (response?.errorCategory === "quota_exhausted") {
+      request.onError?.(text || "model quota exhausted", "quota_exhausted");
+      return null;
+    }
+    if (response?.finishReason === "error") {
+      request.onError?.(text || "model request failed");
+      return null;
+    }
     if (!text.trim()) {
       request.onError?.("the model returned no content");
       return null;
@@ -489,11 +497,12 @@ export function applyNarrative(markdown: string, narrative: SegmentNarrative): s
   const match = markdown.match(FRONTMATTER);
   if (!match) return markdown;
 
+  const title = clampSentence(narrative.title, 80);
   const body = match[1]
     .split("\n")
     .filter((line) => !/^(?:title|description|summary_state):/u.test(line));
   const rewritten = [
-    `title: ${yamlString(narrative.title)}`,
+    `title: ${yamlString(title)}`,
     `description: ${yamlString(narrative.description)}`,
     ...body,
     "summary_state: ready",
@@ -506,8 +515,13 @@ export function applyNarrative(markdown: string, narrative: SegmentNarrative): s
   const frontmatterEnd = updated.indexOf("\n---", 3) + 4;
   const citations = updated.match(CITATIONS);
   const tail = citations?.index !== undefined ? updated.slice(citations.index) : "";
-  const narrativeBody = narrative.body.trim() || descriptionBody(narrative.description);
-  return `${updated.slice(0, frontmatterEnd)}\n${narrativeBody}\n\n${tail}`;
+  // The frontmatter title serves the timeline; Markdown readers also need an
+  // H1. Own it here so model output and repeated narration cannot duplicate it.
+  const narrativeBody = narrative.body.trim()
+    .replace(/^(?:#(?:[ \t]+[^\r\n]*)?(?:\r?\n|$)\s*)+/u, "")
+    .trim() || descriptionBody(narrative.description);
+  const heading = title.replace(/[\\`*_[\]<>#]/gu, "\\$&");
+  return `${updated.slice(0, frontmatterEnd)}\n\n# ${heading}\n\n${narrativeBody}\n\n${tail}`;
 }
 
 /** Whether a summary has been written and is fit to show. */
