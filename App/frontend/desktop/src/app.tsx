@@ -14,8 +14,11 @@ import {
 import { AppProviders, useApiClients } from "./app/providers.js";
 import { AppRouter } from "./app/router.js";
 import { UpdateCoordinatorProvider } from "./app/update-coordinator.js";
+import { CampaignPromptHost } from "./components/campaign-prompt-host.js";
 import { GithubStarPromptHost } from "./components/github-star-prompt-host.js";
 import { InviteResultToast } from "./components/invite-result-toast.js";
+import { NotificationCenterProvider } from "./components/notification-center.js";
+import { TokenCreditToastHost } from "./components/token-credit-toast-host.js";
 import {
   FOCUSED_AGENT_CHAT_STORAGE_KEY,
   readGuidanceCompleted,
@@ -311,9 +314,12 @@ function RuntimeApp() {
   return (
     <UpdateCoordinatorProvider>
       <AgentRuntimeBridge taskStateCoordinator={taskStateCoordinator ?? undefined}>
-        <AppRouter onRetry={retry} />
-        <GithubStarPromptHost />
-        {state.invitationToast ? (
+        <NotificationCenterProvider>
+          <AppRouter onRetry={retry} />
+          <CampaignPromptHost />
+          <TokenCreditToastHost />
+          <GithubStarPromptHost />
+          {state.invitationToast ? (
           <InviteResultToast
             key={state.invitationToast.id}
             text={t(
@@ -336,7 +342,8 @@ function RuntimeApp() {
               }
             }}
           />
-        ) : null}
+          ) : null}
+        </NotificationCenterProvider>
       </AgentRuntimeBridge>
     </UpdateCoordinatorProvider>
   );
