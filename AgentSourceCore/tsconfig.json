@@ -8,6 +8,5 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/tests/**"]
+  "include": ["src/**/*.ts"]
 }

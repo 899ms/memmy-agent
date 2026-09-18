@@ -8,11 +8,10 @@ import { join } from "node:path";
 import { tool } from "@opencode-ai/plugin";
 import {
   closeRuntimeSession,
-  completeSourceTurn,
+  completeRuntimeTurn,
   loadRuntimeL3,
   notifyRuntimeBoundary,
   openRuntimeSession,
-  readOpencodeHookSourceTurn,
   startRuntimeTurn
 } from "./memmy-workspace-bridge.mjs";
 
@@ -55,9 +54,7 @@ export const MemmyMemoryPlugin = async ({ client, directory, worktree }) => {
   }
 
   async function ensureSession(memmy, externalSessionId, agent) {
-    const profileId = normalizeText(agent) || "main";
-    const cacheKey = externalSessionId + ":" + profileId;
-    const cached = sessionCache.get(cacheKey);
+    const cached = sessionCache.get(externalSessionId);
     if (cached) {
       return cached;
     }
@@ -65,13 +62,13 @@ export const MemmyMemoryPlugin = async ({ client, directory, worktree }) => {
       configUrl: CONFIG_URL,
       source: SOURCE,
       adapterId: "memmy-opencode-plugin",
-      profileId,
+      profileId: normalizeText(agent) || "main",
       sessionKey: "opencode-memory-" + externalSessionId,
       workspaceRoot: worktree || directory || null,
       transition: "allow_legacy_rollover"
     });
     if (!opened) throw new Error("Memmy session unavailable");
-    sessionCache.set(cacheKey, opened);
+    sessionCache.set(externalSessionId, opened);
     return opened;
   }
 
@@ -106,7 +103,6 @@ export const MemmyMemoryPlugin = async ({ client, directory, worktree }) => {
         sourceMemoryIds: Array.isArray(turn && turn.sourceMemoryIds) ? turn.sourceMemoryIds : undefined,
         query: cleanQuery,
         userMessageId: normalizeText(output && output.message && output.message.id) || requestedTurnId,
-        profileId: normalizeText(input.agent) || "main",
         answerParts: new Map(),
         toolCalls: [],
         toolResults: [],
@@ -146,32 +142,24 @@ export const MemmyMemoryPlugin = async ({ client, directory, worktree }) => {
     captureJobs.add(job);
   }
 
-  // Capture reads the turn back from opencode.db so the plugin and the offline scan submit
-  // the same identity, text and tools. A turn that is not on disk yet is left for the scan.
   async function completeTurn(pending) {
-    const conversationId = normalizeText(pending.externalSessionId);
-    const turnId = normalizeText(pending.userMessageId);
-    if (!conversationId || !turnId) {
-      log("warn", "Memmy turn capture skipped", { reason: "identity_unresolved", sessionID: pending.externalSessionId });
+    const answer = sanitizeCaptureText([...pending.answerParts.values()].filter(Boolean).join("\n\n")) ||
+      sanitizeCaptureText(pending.error);
+    if (!sanitizeCaptureText(pending.query) || !answer) {
       return;
     }
-    const parsed = await readOpencodeHookSourceTurn({ conversationId, turnId });
-    if (!parsed.turn) {
-      log("warn", "Memmy turn capture skipped", { reason: parsed.reason || "identity_unresolved", sessionID: conversationId });
-      return;
-    }
-    const result = await completeSourceTurn({
-      configUrl: CONFIG_URL,
-      turn: parsed.turn,
-      sessionId: normalizeText(pending.sessionId) || undefined,
+    const runtimeSession = sessionCache.get(pending.externalSessionId);
+    if (!runtimeSession) return;
+    await completeRuntimeTurn(runtimeSession, {
+      turnId: pending.turnId,
+      episodeId: pending.episodeId,
+      query: pending.query,
+      answer,
+      status: pending.status,
       sourceMemoryIds: pending.sourceMemoryIds,
-      profileId: normalizeText(parsed.turn.profileId) || normalizeText(pending.profileId) || "main",
-      adapterId: "memmy-opencode-plugin"
+      toolCalls: pending.toolCalls.length ? pending.toolCalls : undefined,
+      toolResults: pending.toolResults.length ? pending.toolResults : undefined
     });
-    const status = normalizeText(result && result.status);
-    if (status !== "stored" && status !== "existing" && status !== "rejected") {
-      log("warn", "Memmy turn capture failed", { reason: normalizeText(result && result.reason) || status || "unexpected_response", sessionID: conversationId });
-    }
   }
 
   async function handleResumeSearch(sessionID, query, parts) {
@@ -399,11 +387,14 @@ export const MemmyMemoryPlugin = async ({ client, directory, worktree }) => {
         }
         return;
       }
-      // An interrupted turn is not dropped here: the database decides whether it produced
-      // usable text or a finished tool, and the scan can still fill it in later.
       if (event && event.type === "session.error") {
-        const pending = pendingTurns.get(normalizeText(properties.sessionID));
+        const sessionID = normalizeText(properties.sessionID);
+        const pending = pendingTurns.get(sessionID);
         if (pending) {
+          if (isCancellationError(properties.error)) {
+            pendingTurns.delete(sessionID);
+            return;
+          }
           pending.status = "failed";
           pending.error = errorText(properties.error);
         }
