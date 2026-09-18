@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type KnowledgeBase,
+  type KnowledgeFile,
   type KnowledgeFiles,
   type KnowledgeFolder,
   type KnowledgeMember,
@@ -95,6 +103,48 @@ function fileExtension(name: string) {
   return (ext || "file").toUpperCase().slice(0, 4);
 }
 
+function folderLocationPath(
+  folderById: Map<string, KnowledgeFolder>,
+  targetId: string,
+): string {
+  if (!targetId) return "";
+  const names: string[] = [];
+  let cursor = targetId;
+  while (cursor) {
+    const folder = folderById.get(cursor);
+    if (!folder) return "";
+    names.unshift(folder.name);
+    cursor = folder.parentId;
+  }
+  return names.length ? `${names.join(" / ")} /` : "";
+}
+
+function highlightName(name: string, query: string): ReactNode {
+  const needle = query.trim();
+  if (!needle) return name;
+  const lower = name.toLowerCase();
+  const token = needle.toLowerCase();
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let key = 0;
+  while (cursor < name.length) {
+    const index = lower.indexOf(token, cursor);
+    if (index === -1) {
+      nodes.push(name.slice(cursor));
+      break;
+    }
+    if (index > cursor) nodes.push(name.slice(cursor, index));
+    nodes.push(
+      <mark key={key} className="mk-hit">
+        {name.slice(index, index + needle.length)}
+      </mark>,
+    );
+    key += 1;
+    cursor = index + needle.length;
+  }
+  return nodes;
+}
+
 function NameField({
   value,
   onChange,
@@ -174,6 +224,7 @@ export function KnowledgePage({
   const [activeId, setActiveId] = useState("");
   const [kbQuery, setKbQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -186,6 +237,7 @@ export function KnowledgePage({
   const [fileDeleteTarget, setFileDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [page, setPage] = useState(1);
   const [listing, setListing] = useState<KnowledgeFiles | null>(null);
+  const [treeFiles, setTreeFiles] = useState<KnowledgeFile[] | null>(null);
   const [folders, setFolders] = useState<KnowledgeFolder[]>([]);
   const [folderId, setFolderId] = useState(""); // "" 表示知识库根目录
   const [folderBack, setFolderBack] = useState<string[]>([]);
@@ -226,6 +278,7 @@ export function KnowledgePage({
   const [refresh, setRefresh] = useState(0);
   const uploadInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const fileSearchInput = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
   const uploadAbort = useRef<AbortController | null>(null);
@@ -307,7 +360,9 @@ export function KnowledgePage({
     setAddMenuOpen(false);
     setDragOver(false);
     setFileQuery("");
+    setFileSearchOpen(false);
     setFolders([]);
+    setTreeFiles(null);
     setFolderId("");
     setFolderBack([]);
     setFolderFwd([]);
@@ -397,6 +452,30 @@ export function KnowledgePage({
     };
   }, [activeId, page, folderId, api, refresh, zh]);
   useEffect(() => {
+    setTreeFiles(null);
+  }, [activeId]);
+  useEffect(() => {
+    if (!activeId || !fileSearchOpen) return;
+    const controller = new AbortController();
+    void api<KnowledgeFiles>(
+      `/bases/${encodeURIComponent(activeId)}/files?page=1&recursive=true`,
+      "GET",
+      undefined,
+      controller.signal,
+    )
+      .then((value) => {
+        if (!controller.signal.aborted) setTreeFiles(value.files ?? []);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted && !isAbortError(error))
+          setTreeFiles(null);
+      });
+    return () => controller.abort();
+  }, [activeId, fileSearchOpen, api, refresh]);
+  useEffect(() => {
+    if (fileSearchOpen) fileSearchInput.current?.focus();
+  }, [fileSearchOpen]);
+  useEffect(() => {
     if (!menuOpen && !addMenuOpen && !rowMenu) return;
     const close = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -407,10 +486,16 @@ export function KnowledgePage({
         setRowMenu(null);
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key !== "Escape") return;
+      if (menuOpen || addMenuOpen || rowMenu) {
         setMenuOpen(false);
         setAddMenuOpen(false);
         setRowMenu(null);
+        return;
+      }
+      if (fileSearchOpen) {
+        setFileSearchOpen(false);
+        setFileQuery("");
       }
     };
     document.addEventListener("mousedown", close);
@@ -419,7 +504,7 @@ export function KnowledgePage({
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", escape);
     };
-  }, [menuOpen, addMenuOpen, rowMenu]);
+  }, [menuOpen, addMenuOpen, rowMenu, fileSearchOpen]);
   async function run(operation: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -645,9 +730,14 @@ export function KnowledgePage({
     settings?.bases.filter((base) => base.selected).map((base) => base.id) ??
     [];
   const fileKeyword = fileQuery.trim().toLowerCase();
-  const visibleFiles = (listing?.files ?? []).filter(
-    (file) => !fileKeyword || file.name.toLowerCase().includes(fileKeyword),
-  );
+  const searching = fileSearchOpen;
+  const currentVisibleFiles = searching
+    ? fileKeyword
+      ? (treeFiles ?? []).filter((file) =>
+          file.name.toLowerCase().includes(fileKeyword),
+        )
+      : []
+    : (listing?.files ?? []);
   const quotaReached = ownedBases.length >= maxBases;
 
   /* ---------- 目录导航与操作 ---------- */
@@ -716,15 +806,20 @@ export function KnowledgePage({
       .sort((a, b) => a.name.localeCompare(b.name, zh ? "zh" : "en"))
       .map((folder) => ({ folder, depth: depthOf(folder) }));
   }, [moveTarget, folders, folderById, zh]);
-  const visibleChildFolders = childFolders.filter(
-    (folder) => !fileKeyword || folder.name.toLowerCase().includes(fileKeyword),
-  );
-  const subFolderCount = (id: string) =>
-    folders.filter((folder) => folder.parentId === id).length;
+  const visibleChildFolders = searching
+    ? fileKeyword
+      ? folders
+          .filter((folder) => folder.name.toLowerCase().includes(fileKeyword))
+          .slice()
+          .sort((a, b) => a.name.localeCompare(b.name, zh ? "zh" : "en"))
+      : []
+    : childFolders;
+  const hasVisibleRows =
+    visibleChildFolders.length > 0 || currentVisibleFiles.length > 0;
   /* ---------- 批量选择与删除 ---------- */
   const visibleRowKeys = [
     ...visibleChildFolders.map((folder) => `folder:${folder.id}`),
-    ...visibleFiles.map((file) => `file:${file.id}`),
+    ...currentVisibleFiles.map((file) => `file:${file.id}`),
   ];
   const allRowsChecked =
     visibleRowKeys.length > 0 && visibleRowKeys.every((key) => checked.has(key));
@@ -773,14 +868,26 @@ export function KnowledgePage({
       setRefresh((value) => value + 1);
     });
   }
+  function closeFileSearch() {
+    setFileSearchOpen(false);
+    setFileQuery("");
+  }
+  function openFileSearch() {
+    setFileSearchOpen(true);
+    setFileQuery("");
+    setCreatingFolder(false);
+    setRenamingFolder(null);
+    setChecked(new Set());
+    setRowMenu(null);
+  }
   function enterFolder(id: string, pushHistory = true) {
-    if (pushHistory) {
+    if (pushHistory && id !== folderId) {
       setFolderBack((stack) => [...stack, folderId]);
       setFolderFwd([]);
     }
     setFolderId(id);
     setPage(1);
-    setFileQuery("");
+    closeFileSearch();
     setCreatingFolder(false);
     setRenamingFolder(null);
     setRowMenu(null);
@@ -792,7 +899,7 @@ export function KnowledgePage({
     setFolderFwd((stack) => [...stack, folderId]);
     setFolderId(previous);
     setPage(1);
-    setFileQuery("");
+    closeFileSearch();
     setRowMenu(null);
   }
   function goFolderForward() {
@@ -802,7 +909,7 @@ export function KnowledgePage({
     setFolderBack((stack) => [...stack, folderId]);
     setFolderId(next);
     setPage(1);
-    setFileQuery("");
+    closeFileSearch();
     setRowMenu(null);
   }
   function commitCreateFolder() {
@@ -1176,7 +1283,7 @@ export function KnowledgePage({
                       )}
                     </div>
                   )}
-                  {!active.shared && (
+                  {!active.shared && !fileSearchOpen && (
                     <button
                       type="button"
                       className="mk-primary"
@@ -1219,7 +1326,7 @@ export function KnowledgePage({
               />
 
               {/* ---------- 面包屑导航（目录内） ---------- */}
-              {folderId && (
+              {folderId && !fileSearchOpen && (
                 <nav className="mk-nav" aria-label={t("目录路径", "Folder path")}>
                   <button
                     type="button"
@@ -1281,21 +1388,59 @@ export function KnowledgePage({
                 </nav>
               )}
 
-              {/* ---------- 工具条 ---------- */}
-              <div className="mk-toolbar">
-                <div className="mk-count">{t("文件", "Files")}</div>
-                <div className="mk-spacer" />
-                <div className="mk-fsearch">
-                  <I d={IC.search} size={13} />
-                  <input
-                    value={fileQuery}
-                    onChange={(event) => setFileQuery(event.target.value)}
-                    placeholder={folderId ? t("搜索当前文件夹", "Search this folder") : t("搜索文件", "Search files")}
-                    aria-label={t("搜索文件", "Search files")}
-                  />
+              {/* ---------- 工具条 / 搜索页 ---------- */}
+              {fileSearchOpen ? (
+                <div className="mk-search-bar">
+                  <div className="mk-fsearch mk-fsearch-full">
+                    <I d={IC.search} size={13} />
+                    <input
+                      ref={fileSearchInput}
+                      type="text"
+                      value={fileQuery}
+                      onChange={(event) => setFileQuery(event.target.value)}
+                      placeholder={t("在知识库中搜索", "Search this knowledge base")}
+                      aria-label={t("在知识库中搜索", "Search this knowledge base")}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    {fileQuery ? (
+                      <button
+                        type="button"
+                        className="mk-search-clear"
+                        onClick={() => {
+                          setFileQuery("");
+                          fileSearchInput.current?.focus();
+                        }}
+                      >
+                        {t("清除", "Clear")}
+                      </button>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="mk-icon-btn"
+                    aria-label={t("关闭搜索", "Close search")}
+                    onClick={closeFileSearch}
+                  >
+                    <I d={IC.close} size={14} />
+                  </button>
                 </div>
-              </div>
-              {checked.size > 0 && !active.shared && (
+              ) : (
+                <div className="mk-toolbar">
+                  <div className="mk-count">{t("文件", "Files")}</div>
+                  <div className="mk-spacer" />
+                  <button
+                    type="button"
+                    className="mk-fsearch"
+                    onClick={openFileSearch}
+                    aria-label={t("搜索文件", "Search files")}
+                  >
+                    <I d={IC.search} size={13} />
+                    <span>{t("搜索文件", "Search files")}</span>
+                  </button>
+                </div>
+              )}
+              {checked.size > 0 && !active.shared && !fileSearchOpen && (
                 <div className="mk-batchbar" role="toolbar" aria-label={t("批量操作", "Batch actions")}>
                   <span className="mk-batch-count">
                     {t(`已选 ${checked.size} 项`, `${checked.size} selected`)}
@@ -1388,13 +1533,13 @@ export function KnowledgePage({
               <div
                 className={`mk-body${dragOver ? " mk-body-drag" : ""}`}
                 onDragOver={(event) => {
-                  if (active.shared) return;
+                  if (active.shared || searching) return;
                   event.preventDefault();
                   setDragOver(true);
                 }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={(event) => {
-                  if (active.shared) return;
+                  if (active.shared || searching) return;
                   event.preventDefault();
                   setDragOver(false);
                   void filesFromDrop(event).then((files) =>
@@ -1402,9 +1547,9 @@ export function KnowledgePage({
                   );
                 }}
               >
-                {!listing ? (
+                {!searching && !listing ? (
                   <p className="mk-loading">{t("正在读取文件…", "Loading files…")}</p>
-                ) : visibleFiles.length === 0 && !visibleChildFolders.length && !creatingFolder ? (
+                ) : !searching && !hasVisibleRows && !creatingFolder ? (
                   folderId ? (
                     <div className="mk-empty-state">
                       <div className="mk-illust">
@@ -1433,7 +1578,7 @@ export function KnowledgePage({
                   )
                 ) : (
                   <ul className="mk-flist">
-                    {creatingFolder && (
+                    {!searching && creatingFolder && (
                       <li className="mk-frow mk-row-create">
                         <span className="mk-fic mk-fic-folder" aria-hidden="true"><I d={IC.folder} size={17} /></span>
                         <input
@@ -1456,8 +1601,11 @@ export function KnowledgePage({
                         </button>
                       </li>
                     )}
-                    {visibleChildFolders.map((folder) =>
-                      renamingFolder?.id === folder.id ? (
+                    {visibleChildFolders.map((folder) => {
+                      const path = searching
+                        ? folderLocationPath(folderById, folder.parentId)
+                        : "";
+                      return renamingFolder?.id === folder.id ? (
                         <li key={folder.id} className="mk-frow">
                           <span className="mk-fic mk-fic-folder" aria-hidden="true"><I d={IC.folder} size={17} /></span>
                           <input
@@ -1486,7 +1634,7 @@ export function KnowledgePage({
                             setRowMenu({ x: event.clientX, y: event.clientY, kind: "folder", id: folder.id });
                           }}
                         >
-                          {!active.shared && (
+                          {!active.shared && !searching && (
                             <input
                               type="checkbox"
                               className="mk-check"
@@ -1498,12 +1646,8 @@ export function KnowledgePage({
                           )}
                           <span className="mk-fic mk-fic-folder" aria-hidden="true"><I d={IC.folder} size={17} /></span>
                           <div className="mk-fmeta">
-                            <div className="mk-fname">{folder.name}</div>
-                            {subFolderCount(folder.id) > 0 && (
-                              <div className="mk-fsub">
-                                {t(`${subFolderCount(folder.id)} 个子文件夹`, `${subFolderCount(folder.id)} subfolders`)}
-                              </div>
-                            )}
+                            <div className="mk-fname">{highlightName(folder.name, fileQuery)}</div>
+                            {path ? <div className="mk-fsub">{path}</div> : null}
                           </div>
                           {!active.shared && (
                             <button
@@ -1520,20 +1664,28 @@ export function KnowledgePage({
                             </button>
                           )}
                         </li>
-                      ),
-                    )}
-                    {visibleFiles.map((file) => {
+                      );
+                    })}
+                    {currentVisibleFiles.map((file) => {
                       const status = fileStatus(file.status, zh);
+                      const path = searching
+                        ? folderLocationPath(folderById, file.folderId ?? "")
+                        : "";
                       return (
                         <li
                           key={file.id}
                           className="mk-frow"
+                          onClick={
+                            searching
+                              ? () => enterFolder(file.folderId ?? "")
+                              : undefined
+                          }
                           onContextMenu={(event) => {
                             event.preventDefault();
                             setRowMenu({ x: event.clientX, y: event.clientY, kind: "file", id: file.id });
                           }}
                         >
-                          {!active.shared && (
+                          {!active.shared && !searching && (
                             <input
                               type="checkbox"
                               className="mk-check"
@@ -1544,8 +1696,8 @@ export function KnowledgePage({
                           )}
                           <span className="mk-fic" aria-hidden="true">{fileExtension(file.name)}</span>
                           <div className="mk-fmeta">
-                            <div className="mk-fname">{file.name}</div>
-                            {file.message && <div className="mk-fsub">{file.message}</div>}
+                            <div className="mk-fname">{highlightName(file.name, fileQuery)}</div>
+                            {path ? <div className="mk-fsub">{path}</div> : file.message ? <div className="mk-fsub">{file.message}</div> : null}
                           </div>
                           <span className={`mk-fstatus ${status.cls}`}>
                             <span className="mk-sdot" />
@@ -1556,7 +1708,10 @@ export function KnowledgePage({
                               type="button"
                               className="mk-icon-btn mk-fdel"
                               aria-label={t(`删除 ${file.name}`, `Delete ${file.name}`)}
-                              onClick={() => setFileDeleteTarget({ id: file.id, name: file.name })}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setFileDeleteTarget({ id: file.id, name: file.name });
+                              }}
                             >
                               <I d={IC.trash} size={14} />
                             </button>
@@ -1564,12 +1719,16 @@ export function KnowledgePage({
                         </li>
                       );
                     })}
-                    {!visibleChildFolders.length && !visibleFiles.length && !creatingFolder && (
-                      <p className="mk-loading">{t("没有匹配的文件。", "No matching files.")}</p>
+                    {searching && !hasVisibleRows && (
+                      <p className="mk-loading">
+                        {fileKeyword && !treeFiles
+                          ? t("正在读取文件…", "Loading files…")
+                          : t("没有匹配的文件。", "No matching files.")}
+                      </p>
                     )}
                   </ul>
                 )}
-                {listing && listing.total > FILES_PAGE_SIZE && (
+                {!searching && listing && listing.total > FILES_PAGE_SIZE && (
                   <div className="mk-pagination">
                     <span>
                       {t(`共 ${listing.total} 个文件`, `${listing.total} files`)}
@@ -1625,7 +1784,9 @@ export function KnowledgePage({
       {/* ---------- 行右键菜单 ---------- */}
       {rowMenu && (() => {
         const folder = rowMenu.kind === "folder" ? folderById.get(rowMenu.id) : undefined;
-        const file = rowMenu.kind === "file" ? (listing?.files ?? []).find((item) => item.id === rowMenu.id) : undefined;
+        const file = rowMenu.kind === "file"
+          ? [...(treeFiles ?? []), ...(listing?.files ?? [])].find((item) => item.id === rowMenu.id)
+          : undefined;
         const name = folder?.name ?? file?.name ?? "";
         return (
           <div
@@ -1810,10 +1971,16 @@ const styles = `
 .mk-count{font-size:13px;font-weight:800}
 .mk-count em{font-style:normal;color:var(--mk-ter);font-weight:700;margin-left:2px}
 .mk-spacer{flex:1}
+.mk-search-bar{display:flex;align-items:center;gap:8px;padding:22px 32px 14px}
 .mk-fsearch{display:flex;align-items:center;gap:7px;background:#f6f8f8;border:1px solid transparent;border-radius:8px;padding:5px 11px;width:180px;color:var(--mk-ter)}
-.mk-fsearch:focus-within{background:#fff;border-color:var(--mk-accent)}
-.mk-fsearch input{border:0;background:transparent;padding:1px 0;font-size:12.5px;width:100%}
+.memmy-knowledge button.mk-fsearch{justify-content:flex-start;font-weight:400;text-align:left}
+.mk-fsearch:focus-within,.memmy-knowledge button.mk-fsearch:hover{background:#fff;border-color:var(--mk-accent)}
+.mk-fsearch-full{flex:1;width:auto;border-radius:999px;background:#fff;border-color:var(--mk-accent);padding:7px 14px}
+.mk-fsearch input{border:0;background:transparent;padding:1px 0;font-size:12.5px;width:100%;color:var(--mk-ink)}
+.mk-fsearch input::placeholder{color:var(--mk-ter)}
 .mk-fsearch input:focus-visible{outline:none;box-shadow:none;border:0}
+.memmy-knowledge .mk-search-clear{border:0;background:transparent;padding:0 2px;font-size:13px;font-weight:600;color:var(--mk-sub);flex-shrink:0}
+.memmy-knowledge .mk-search-clear:hover{background:transparent;color:var(--mk-ink)}
 .memmy-knowledge .mk-tool-btn{display:inline-flex;align-items:center;gap:5px;border:0;padding:6px 9px;font-size:12px;font-weight:700;color:var(--mk-sub);background:transparent}
 .memmy-knowledge .mk-tool-btn:hover{color:var(--mk-ink);background:rgba(27,42,39,.05)}
 .memmy-knowledge .mk-tool-on{color:var(--mk-accent-deep);background:var(--mk-accent-tint)}
@@ -1841,6 +2008,7 @@ const styles = `
 .mk-fic{width:36px;height:36px;border-radius:9px;background:#f2f5f4;color:#7d8d88;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;letter-spacing:.02em;flex-shrink:0}
 .mk-fmeta{flex:1;min-width:0}
 .mk-fname{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.memmy-knowledge .mk-fname .mk-hit{font:inherit;color:var(--mk-accent-deep);background:var(--mk-accent-tint);border-radius:3px;padding:0 1px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .mk-fsub{font-size:11.5px;color:var(--mk-ter);font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mk-fstatus{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--mk-sub);flex-shrink:0}
 .mk-sdot{width:6px;height:6px;border-radius:50%;background:var(--mk-line-strong)}
@@ -1946,5 +2114,5 @@ const styles = `
 .mk-modal-note svg{flex-shrink:0;margin-top:2px}
 .mk-radio{display:flex!important;align-items:flex-start;gap:8px;font-size:13px;font-weight:600;padding:6px 0;cursor:pointer;line-height:1.5}
 .mk-radio input{margin-top:2px;accent-color:var(--mk-accent)}
-@media(max-width:850px){.mk-side{width:210px}.mk-kbheader,.mk-toolbar,.mk-body,.mk-nav{padding-left:20px;padding-right:20px}}
+@media(max-width:850px){.mk-side{width:210px}.mk-kbheader,.mk-toolbar,.mk-search-bar,.mk-body,.mk-nav{padding-left:20px;padding-right:20px}}
 `;

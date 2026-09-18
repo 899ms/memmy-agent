@@ -93,7 +93,7 @@ export function registerKnowledgeRoutes(
       });
       scoped.get<{
         Params: { id: string };
-        Querystring: { page?: string; folderId?: string };
+        Querystring: { page?: string; folderId?: string; recursive?: string };
       }>("/bases/:id/files", async (request) => {
         const page = Number(request.query.page ?? 1);
         if (!Number.isSafeInteger(page) || page < 1 || page > 10000)
@@ -101,9 +101,12 @@ export function registerKnowledgeRoutes(
         const folderId = text(request.query.folderId ?? "");
         if (folderId && !/^[A-Za-z0-9-]{1,36}$/.test(folderId))
           throw new KnowledgeError("目录参数无效");
+        const recursive = text(request.query.recursive ?? "");
+        if (recursive && recursive !== "1" && recursive !== "true")
+          throw new KnowledgeError("目录参数无效");
         const data = record(
           await client.request(
-            `/bases/${encodeURIComponent(request.params.id)}/files?page=${page}${folderId ? `&folderId=${encodeURIComponent(folderId)}` : ""}`,
+            `/bases/${encodeURIComponent(request.params.id)}/files?page=${page}${folderId ? `&folderId=${encodeURIComponent(folderId)}` : ""}${recursive ? "&recursive=true" : ""}`,
           ),
         );
         if (!Array.isArray(data.files))
@@ -116,6 +119,7 @@ export function registerKnowledgeRoutes(
               name: text(file.name),
               status: text(file.status),
               message: text(file.message),
+              folderId: text(file.folderId),
             };
           }),
           total: typeof data.total === "number" ? data.total : 0,

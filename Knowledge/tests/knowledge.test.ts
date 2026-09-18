@@ -307,6 +307,24 @@ it("local routes require auth, reject credential overrides and have no reveal en
     });
     expect(response.json()).toEqual(settings);
     expect(response.headers["cache-control"]).toBe("no-store");
+    fetcher.mockImplementation(async () =>
+      reply({ files: [], total: 0, page: 1 }),
+    );
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/knowledge/bases/owned/files?page=1&recursive=true",
+      headers,
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+      "https://cloud.example/api/knowledge/bases/owned/files?page=1&recursive=true",
+    );
+    const rejected = await app.inject({
+      method: "GET",
+      url: "/api/knowledge/bases/owned/files?page=1&recursive=all",
+      headers,
+    });
+    expect(rejected.statusCode).toBe(400);
   } finally {
     await app.close();
   }

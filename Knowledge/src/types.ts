@@ -20,6 +20,7 @@ export interface KnowledgeFile {
   name: string;
   status: string;
   message: string;
+  folderId?: string;
 }
 export interface KnowledgeFolder {
   id: string;
