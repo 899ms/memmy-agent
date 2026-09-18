@@ -4,7 +4,8 @@ import {
   parseSettings,
   type ManagedKnowledgeOptions,
 } from "./client.js";
-import { KnowledgeError, MAX_UPLOAD_BYTES, record, text } from "./types.js";
+import { describeKnowledgeRouteError, knowledgeLog } from "./log.js";
+import { KnowledgeError, MAX_UPLOAD_REQUEST_BYTES, record, text } from "./types.js";
 
 export function registerKnowledgeRoutes(
   app: FastifyInstance,
@@ -18,24 +19,37 @@ export function registerKnowledgeRoutes(
   const client = new ManagedKnowledgeClient(options);
   app.register(
     async (scoped) => {
+      scoped.addContentTypeParser(
+        /^multipart\/form-data/,
+        { parseAs: "buffer", bodyLimit: MAX_UPLOAD_REQUEST_BYTES },
+        (_request, body, done) => {
+          done(null, body);
+        },
+      );
       scoped.addHook("preHandler", options.authenticate);
       scoped.addHook("onSend", async (_request, reply, payload) => {
         reply.header("Cache-Control", "no-store");
         return payload;
       });
-      scoped.setErrorHandler((error, _request, reply) => {
-        const status =
-          error instanceof KnowledgeError
-            ? error.statusCode
-            : Number(record(error).statusCode) || 500;
-        void reply
-          .code(status >= 400 && status <= 599 ? status : 500)
-          .send({
-            error:
-              error instanceof KnowledgeError
-                ? error.message
-                : "知识库操作失败，请重试",
+      scoped.setErrorHandler((error, request, reply) => {
+        const described = describeKnowledgeRouteError(error);
+        if (described.kind !== "knowledge")
+          knowledgeLog({
+            hop: "local-route",
+            action: "error",
+            kind: described.kind,
+            method: request.method,
+            path: request.url,
+            status: described.status,
+            message: described.message,
           });
+        void reply
+          .code(
+            described.status >= 400 && described.status <= 599
+              ? described.status
+              : 500,
+          )
+          .send({ error: described.message });
       });
       scoped.get("/settings", () => client.settings());
       scoped.put("/settings", async (request) => {
@@ -128,26 +142,20 @@ export function registerKnowledgeRoutes(
       });
       scoped.post<{ Params: { id: string } }>(
         "/bases/:id/files",
-        { bodyLimit: Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 4096 },
+        { bodyLimit: MAX_UPLOAD_REQUEST_BYTES },
         async (request) => {
-          const body = record(request.body);
+          const contentType = headerText(request.headers["content-type"]);
+          const raw = request.body;
           if (
-            Object.keys(body).some((key) =>
-              !["name", "content", "folderId"].includes(key),
-            )
+            !contentType.toLowerCase().startsWith("multipart/form-data") ||
+            !(raw instanceof Uint8Array) ||
+            raw.byteLength === 0
           )
             throw new KnowledgeError("文件参数无效");
-          const folderId = text(body.folderId ?? "");
-          if (folderId && !/^[A-Za-z0-9-]{1,36}$/.test(folderId))
-            throw new KnowledgeError("目录参数无效");
           await client.request(
             `/bases/${encodeURIComponent(request.params.id)}/files`,
             "POST",
-            {
-              name: body.name,
-              content: body.content,
-              ...(folderId ? { folderId } : {}),
-            },
+            { raw, contentType },
           );
           return { ok: true };
         },
@@ -279,4 +287,8 @@ export function registerKnowledgeRoutes(
     },
     { prefix: "/api/knowledge" },
   );
+}
+
+function headerText(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }

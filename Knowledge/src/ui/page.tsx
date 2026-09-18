@@ -15,8 +15,10 @@ import {
   type KnowledgeSettings,
   FILES_PAGE_SIZE,
   MAX_BASE_NAME_LENGTH,
+  MAX_UPLOAD_MB,
 } from "../types.js";
 
+import { isAbortLike, knowledgeLog } from "../log.js";
 import { visiblePages } from "./pagination.js";
 import {
   DOCUMENT_EXTENSIONS,
@@ -34,6 +36,28 @@ export interface KnowledgePageProps {
   connection: { baseUrl: string; localToken: string };
   language?: string;
   onSignIn?: () => void;
+}
+
+function encodeLocalBody(body: unknown): {
+  payload?: BodyInit;
+  headers: Record<string, string>;
+  bodyBytes: number;
+} {
+  if (body === undefined) return { headers: {}, bodyBytes: 0 };
+  if (body instanceof FormData) {
+    const file = body.get("file");
+    return {
+      payload: body,
+      headers: {},
+      bodyBytes: file instanceof Blob ? file.size : 0,
+    };
+  }
+  const payload = JSON.stringify(body);
+  return {
+    payload,
+    headers: { "Content-Type": "application/json" },
+    bodyBytes: payload.length,
+  };
 }
 
 /* ---------- 图标（线性，currentColor） ---------- */
@@ -298,27 +322,59 @@ export function KnowledgePage({
         body?: unknown,
         signal?: AbortSignal,
       ): Promise<T> => {
-        const response = await fetch(
-          new URL(`/api/knowledge${path}`, connection.baseUrl),
-          {
-            method,
-            signal,
-            headers: {
-              "x-memmy-local-token": connection.localToken,
-              ...(body === undefined
-                ? {}
-                : { "Content-Type": "application/json" }),
+        const encoded = encodeLocalBody(body);
+        const started = Date.now();
+        let response: Response;
+        try {
+          response = await fetch(
+            new URL(`/api/knowledge${path}`, connection.baseUrl),
+            {
+              method,
+              signal,
+              headers: {
+                "x-memmy-local-token": connection.localToken,
+                ...encoded.headers,
+              },
+              body: encoded.payload,
             },
-            body: body === undefined ? undefined : JSON.stringify(body),
-          },
-        );
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(
-            typeof data.error === "string"
-              ? data.error
-              : `HTTP ${response.status}`,
           );
+        } catch (error) {
+          if (signal?.aborted || isAbortLike(error)) throw error;
+          knowledgeLog({
+            hop: "ui",
+            action: "local-api",
+            kind: "network",
+            method,
+            path,
+            bodyBytes: encoded.bodyBytes,
+            ms: Date.now() - started,
+          });
+          throw error;
+        }
+        const data = await response.json().catch((error: unknown) => {
+          if (!response.ok) return {};
+          throw error;
+        });
+        if (!response.ok) {
+          const message =
+            data &&
+            typeof data === "object" &&
+            typeof (data as { error?: unknown }).error === "string"
+              ? (data as { error: string }).error
+              : `HTTP ${response.status}`;
+          knowledgeLog({
+            hop: "ui",
+            action: "local-api",
+            kind: "http",
+            method,
+            path,
+            status: response.status,
+            message,
+            bodyBytes: encoded.bodyBytes,
+            ms: Date.now() - started,
+          });
+          throw new Error(message);
+        }
         return data as T;
       },
     [connection.baseUrl, connection.localToken],
@@ -615,7 +671,7 @@ export function KnowledgePage({
       try {
         const batch = await uploadDocuments(
           incoming,
-          async (file, content, signal) => {
+          async (file, signal) => {
             const dest = await resolveFolderId(
               folderSegments(fileRelativePath(file)),
               targetFolderId,
@@ -660,14 +716,13 @@ export function KnowledgePage({
                 }
               },
             );
+            const form = new FormData();
+            form.append("file", file, file.name);
+            if (dest) form.append("folderId", dest);
             await api(
               `/bases/${encodeURIComponent(baseId)}/files`,
               "POST",
-              {
-                name: file.name,
-                content,
-                ...(dest ? { folderId: dest } : {}),
-              },
+              form,
               signal,
             );
             rememberUploadedFile(file.name, dest);
@@ -682,12 +737,41 @@ export function KnowledgePage({
             }),
           zh,
           controller.signal,
+          (result) =>
+            knowledgeLog(
+              {
+                hop: "ui",
+                action: "upload-file",
+                name: result.name,
+                bytes: result.bytes,
+                ok: result.ok,
+                reason: result.reason,
+                message: result.error,
+              },
+              result.ok ? "info" : "error",
+            ),
         );
         const summary = summarizeUploads(batch.results, batch.stopped);
         succeeded = summary.succeeded;
+        knowledgeLog(
+          {
+            hop: "ui",
+            action: "upload-batch",
+            kind: batch.stopped ? "stopped" : "done",
+            status: summary.failed,
+            message: `succeeded=${summary.succeeded} failed=${summary.failed} format=${summary.format} size=${summary.size} other=${summary.other}`,
+          },
+          summary.failed ? "error" : "info",
+        );
         setUploadNotice({ baseId, kind: "done", ...summary });
       } catch (error) {
         if (controller.signal.aborted) return;
+        knowledgeLog({
+          hop: "ui",
+          action: "upload-batch",
+          kind: "failed",
+          message: error instanceof Error ? error.message : "upload failed",
+        });
         console.error("knowledge upload failed", error);
         setUploadNotice(null);
         setError(
@@ -1511,8 +1595,8 @@ export function KnowledgePage({
                       {uploadNotice.size > 0 && (
                         <p>
                           {t(
-                            `${uploadNotice.size} 个文件超过 20 MB`,
-                            `${uploadNotice.size} file(s) exceed 20 MB`,
+                            `${uploadNotice.size} 个文件超过 ${MAX_UPLOAD_MB} MB`,
+                            `${uploadNotice.size} file(s) exceed ${MAX_UPLOAD_MB} MB`,
                           )}
                         </p>
                       )}
@@ -1572,7 +1656,7 @@ export function KnowledgePage({
                       <span>PDF</span><span>Word</span><span>Markdown</span><span>TXT</span><span>JSON</span><span>XML</span>
                     </div>
                     {!active.shared && (
-                      <p className="mk-empty-limit">{t("可拖拽文件到此处上传，每个文件最多 20 MB", "Drag files here to upload, up to 20 MB each")}</p>
+                      <p className="mk-empty-limit">{t(`可拖拽文件到此处上传，每个文件最多 ${MAX_UPLOAD_MB} MB`, `Drag files here to upload, up to ${MAX_UPLOAD_MB} MB each`)}</p>
                     )}
                   </div>
                   )

@@ -65,7 +65,7 @@ it("shows management only, with recall off by default and no exposed saved secre
   expect(fileInput.multiple).toBe(true);
   expect(fileInput.hidden).toBe(true);
   expect(container.querySelector(".mk-empty-cta")).toBeNull();
-  expect(container.textContent).toContain("每个文件最多 20 MB");
+  expect(container.textContent).toContain("每个文件最多 100 MB");
   expect(container.querySelector(".mk-count")?.textContent?.trim()).toBe("文件");
   expect(container.textContent).not.toContain("默认排序");
   expect(container.textContent).not.toContain("按名称");
