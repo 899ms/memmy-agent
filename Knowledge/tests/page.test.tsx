@@ -67,6 +67,8 @@ it("shows management only, with recall off by default and no exposed saved secre
   expect(container.querySelector(".mk-empty-cta")).toBeNull();
   expect(container.textContent).toContain("每个文件最多 20 MB");
   expect(container.querySelector(".mk-count")?.textContent?.trim()).toBe("文件");
+  expect(container.textContent).not.toContain("默认排序");
+  expect(container.textContent).not.toContain("按名称");
   expect(container.textContent).not.toContain("内容(0)");
   expect(container.textContent).not.toMatch(/文件\s*\(\d+\)/);
   expect(container.textContent).not.toMatch(/\d+ 个文件/);
@@ -196,4 +198,81 @@ it("removes a knowledge base from the list without waiting for delete to finish"
   expect(container.textContent).not.toContain("创建你的第一个知识库");
   expect(container.querySelector(".mk-kb-active")).toBeNull();
   expect(releaseDelete).toBeDefined();
+});
+
+async function renderKnowledge(state: KnowledgeSettings, onSignIn?: () => void) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(state))),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(
+      <KnowledgePage
+        connection={{
+          baseUrl: "http://localhost:1234",
+          localToken: "local-test",
+        }}
+        onSignIn={onSignIn}
+      />,
+    );
+  });
+  return container;
+}
+
+it("shows a centered sign-in empty state without extra copy", async () => {
+  const onSignIn = vi.fn();
+  const container = await renderKnowledge(
+    {
+      authenticated: false,
+      enabled: false,
+      serviceAvailable: false,
+      bases: [],
+    },
+    onSignIn,
+  );
+  expect(container.textContent).toContain("登录后即可使用知识库");
+  expect(container.textContent).not.toContain("无需");
+  expect(container.textContent).not.toContain("会出现在这里");
+  expect(container.textContent).not.toContain("还没有知识库");
+  expect(container.textContent).not.toContain("可创建的知识库");
+  expect(container.querySelector(".mk-notice")).toBeNull();
+  expect(container.querySelector(".mk-group-empty")).toBeNull();
+  const signIn = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("登录 Memmy"),
+  );
+  expect(signIn?.className).toContain("mk-primary");
+  expect(
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("新建知识库"),
+    )?.disabled,
+  ).toBe(true);
+  await act(async () => {
+    signIn!.click();
+  });
+  expect(onSignIn).toHaveBeenCalledTimes(1);
+});
+
+it("shows a centered retry empty state when knowledge is unavailable", async () => {
+  const container = await renderKnowledge({
+    authenticated: true,
+    enabled: false,
+    serviceAvailable: false,
+    bases: [],
+  });
+  expect(container.textContent).toContain("知识库暂时还没准备好");
+  expect(container.textContent).not.toContain("连不上");
+  expect(container.textContent).not.toContain("会出现在这里");
+  expect(container.textContent).not.toContain("可继续使用");
+  expect(container.textContent).not.toContain("还没有知识库");
+  expect(container.textContent).not.toContain("可创建的知识库");
+  expect(container.querySelector(".mk-illust-warn")).not.toBeNull();
+  expect(
+    [...container.querySelectorAll("button")].find((button) =>
+      button.textContent === "重试",
+    ),
+  ).toBeDefined();
 });

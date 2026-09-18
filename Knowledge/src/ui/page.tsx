@@ -60,9 +60,11 @@ const IC = {
   mic: "M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v4",
   trash:
     "M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6",
-  sort: "M11 5h10M11 9h7M11 13h4M3 17l3 3 3-3M6 5v14",
   close: "M18 6 6 18M6 6l12 12",
   book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2zM12 7v6M9 10h6",
+  bookPlain: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
+  lock: "M8 11V8a4 4 0 0 1 8 0v3M6 11h12v10H6z",
+  refresh: "M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6",
   back: "M15 18l-6-6 6-6",
   fwd: "M9 18l6-6-6-6",
   edit: "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z",
@@ -172,7 +174,6 @@ export function KnowledgePage({
   const [activeId, setActiveId] = useState("");
   const [kbQuery, setKbQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
-  const [sortByName, setSortByName] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -306,7 +307,6 @@ export function KnowledgePage({
     setAddMenuOpen(false);
     setDragOver(false);
     setFileQuery("");
-    setSortByName(false);
     setFolders([]);
     setFolderId("");
     setFolderBack([]);
@@ -645,10 +645,9 @@ export function KnowledgePage({
     settings?.bases.filter((base) => base.selected).map((base) => base.id) ??
     [];
   const fileKeyword = fileQuery.trim().toLowerCase();
-  const visibleFiles = (listing?.files ?? [])
-    .filter((file) => !fileKeyword || file.name.toLowerCase().includes(fileKeyword))
-    .slice()
-    .sort((a, b) => (sortByName ? a.name.localeCompare(b.name, zh ? "zh" : "en") : 0));
+  const visibleFiles = (listing?.files ?? []).filter(
+    (file) => !fileKeyword || file.name.toLowerCase().includes(fileKeyword),
+  );
   const quotaReached = ownedBases.length >= maxBases;
 
   /* ---------- 目录导航与操作 ---------- */
@@ -910,7 +909,7 @@ export function KnowledgePage({
         <button
           type="button"
           className="mk-new-btn"
-          disabled={!settings || quotaReached}
+          disabled={!settings || !settings.serviceAvailable || quotaReached}
           title={
             quotaReached
               ? t(`已达可创建上限（${ownedBases.length}/${maxBases}）`, `Limit reached (${ownedBases.length}/${maxBases})`)
@@ -935,7 +934,7 @@ export function KnowledgePage({
         <div className="mk-side-scroll">
           {!settings ? (
             <p className="mk-side-loading" aria-live="polite">{t("加载中…", "Loading…")}</p>
-          ) : (
+          ) : settings.serviceAvailable ? (
             <>
               <div className="mk-group">
                 <div className="mk-group-title">
@@ -957,9 +956,9 @@ export function KnowledgePage({
                 </div>
               )}
             </>
-          )}
+          ) : null}
         </div>
-        {settings && (
+        {settings && settings.serviceAvailable && (
           <footer className="mk-side-foot">
             <span className="mk-quota">
               {t(`可创建的知识库：${ownedBases.length}/${maxBases}`, `Knowledge bases: ${ownedBases.length}/${maxBases}`)}
@@ -993,21 +992,44 @@ export function KnowledgePage({
               {t("正在读取知识库配置…", "Loading knowledge settings…")}
             </p>
           ) : !settings.serviceAvailable ? (
-            <p className="mk-notice" role="status">
-              {t(
-                settings.authenticated
-                  ? "知识库服务暂未就绪，请稍后重试。"
-                  : "登录 Memmy 后即可使用知识库，无需配置其他服务。",
-                settings.authenticated
-                  ? "Knowledge service is not ready. Please try again later."
-                  : "Sign in to Memmy to use knowledge. No additional service setup is needed.",
-              )}
-              {!settings.authenticated && onSignIn && (
-                <button type="button" onClick={onSignIn}>
+            <div className="mk-empty-state" role="status">
+              <div className={settings.authenticated ? "mk-illust mk-illust-warn" : "mk-illust"}>
+                {settings.authenticated ? (
+                  <I d={IC.refresh} size={44} />
+                ) : (
+                  <>
+                    <I d={IC.bookPlain} size={44} />
+                    <span className="mk-illust-badge">
+                      <I d={IC.lock} size={14} />
+                    </span>
+                  </>
+                )}
+              </div>
+              <h3>
+                {settings.authenticated
+                  ? t("知识库暂时还没准备好", "Knowledge is not ready yet")
+                  : t("登录后即可使用知识库", "Sign in to use knowledge")}
+              </h3>
+              {settings.authenticated ? (
+                <button
+                  type="button"
+                  className="mk-retry"
+                  onClick={() => {
+                    setError("");
+                    setRefresh((value) => value + 1);
+                    void run(async () =>
+                      acceptSettings(await api<KnowledgeSettings>("/settings")),
+                    );
+                  }}
+                >
+                  {t("重试", "Retry")}
+                </button>
+              ) : onSignIn ? (
+                <button type="button" className="mk-primary" onClick={onSignIn}>
                   {t("登录 Memmy", "Sign in to Memmy")}
                 </button>
-              )}
-            </p>
+              ) : null}
+            </div>
           ) : !active ? (
             settings.bases.length === 0 ? (
               <div className="mk-empty-state">
@@ -1272,15 +1294,6 @@ export function KnowledgePage({
                     aria-label={t("搜索文件", "Search files")}
                   />
                 </div>
-                <button
-                  type="button"
-                  className={`mk-tool-btn${sortByName ? " mk-tool-on" : ""}`}
-                  onClick={() => setSortByName((value) => !value)}
-                  title={t("切换排序方式", "Toggle sort order")}
-                >
-                  <I d={IC.sort} size={13} />
-                  {sortByName ? t("按名称", "By name") : t("默认排序", "Default")}
-                </button>
               </div>
               {checked.size > 0 && !active.shared && (
                 <div className="mk-batchbar" role="toolbar" aria-label={t("批量操作", "Batch actions")}>
@@ -1723,7 +1736,6 @@ const styles = `
 .memmy-knowledge .mk-danger:hover{background:#a94c47}
 .memmy-knowledge .mk-loading{padding:40px 0;text-align:center;color:var(--mk-ter);font-size:13px}
 .mk-error{padding:12px 16px;margin:16px 32px 0;border:1px solid #ecc3c1;border-radius:10px;color:#b74b46;display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fdf6f5;font-size:13px}
-.mk-notice{padding:11px 14px;background:var(--mk-accent-tint);border-radius:10px;font-size:13px;color:var(--mk-accent-deep);margin:16px 32px 0}
 
 /* ---------- 开关 ---------- */
 .memmy-knowledge .mk-switch{position:relative;width:32px;height:19px;border-radius:20px;background:#d5dfdc;border:0;padding:0;transition:background .15s ease;flex-shrink:0}
@@ -1852,8 +1864,13 @@ const styles = `
 .mk-blank{padding:0}
 .mk-illust{width:112px;height:112px;border-radius:26px;background:var(--mk-accent-tint);color:var(--mk-accent-deep);display:flex;align-items:center;justify-content:center;margin-bottom:22px;position:relative}
 .mk-illust::after{content:"";position:absolute;inset:-11px;border-radius:34px;border:1.5px dashed rgba(47,179,147,.35)}
+.mk-illust-warn{background:#fff3e8;color:#c47a3d}
+.mk-illust-warn::after{border-color:rgba(245,158,107,.4)}
+.mk-illust-badge{position:absolute;right:-6px;bottom:-6px;width:28px;height:28px;border-radius:9px;background:#fff;color:var(--mk-accent-deep);border:1px solid var(--mk-line);display:grid;place-items:center;z-index:1}
 .mk-empty-state h3{font-size:16px;font-weight:800;margin:0 0 8px}
+.mk-empty-state h3 + button{margin-top:12px}
 .mk-empty-state p{font-size:13px;color:var(--mk-ter);margin:0 0 20px}
+.memmy-knowledge .mk-retry{display:inline-flex;align-items:center;gap:6px;background:#fff;color:#c47a3d;border:1px solid #f0d2b4;border-radius:8px;padding:8px 16px;font-weight:700}
 .mk-empty-cta{margin-bottom:4px}
 .mk-fmts{display:flex;gap:8px;margin-top:18px}
 .mk-fmts span{font-size:11px;font-weight:700;color:var(--mk-sub);background:#f4f7f6;padding:4px 11px;border-radius:999px}
