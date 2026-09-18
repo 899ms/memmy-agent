@@ -59,9 +59,7 @@ export function createOpencodeSourceAdapter(deps: CreateOpencodeSourceAdapterDep
         });
 
         for await (const rawMessage of streamConversationWindow(
-          options.fullHistory
-            ? streamOpencodeDatabase(target.databasePath, options.signal)
-            : readOpencodeDatabase(target.databasePath, options.signal),
+          options.fullHistory ? streamOpencodeDatabase(target.databasePath) : readOpencodeDatabase(target.databasePath),
           options.since,
           options.signal,
           remainingMessageCapacity(options.maxMessages, emittedMessages),
@@ -113,7 +111,6 @@ function toConversationMessage(
     createdAt: rawMessage.createdAt,
     workspacePath: rawMessage.workspacePath,
     gitRoot: rawMessage.gitRoot,
-    ordinal: rawMessage.ordinal,
     rawMeta: rawMessage.rawMeta
   };
 }

@@ -66,7 +66,7 @@ export function createOpenclawSourceAdapter(deps: CreateOpenclawSourceAdapterDep
         });
 
         for await (const rawMessage of streamConversationWindow(
-          readOpenclawDatabase(database.databasePath, options.signal),
+          readOpenclawDatabase(database.databasePath),
           options.since,
           options.signal,
           remainingMessageCapacity(options.maxMessages, emittedMessages),
@@ -111,7 +111,6 @@ function toConversationMessage(sourceId: string, rawMessage: RawOpenclawMessage)
     createdAt: rawMessage.createdAt,
     workspacePath: rawMessage.workspacePath,
     gitRoot: rawMessage.gitRoot,
-    ordinal: rawMessage.ordinal,
     rawMeta: rawMessage.rawMeta
   };
 }

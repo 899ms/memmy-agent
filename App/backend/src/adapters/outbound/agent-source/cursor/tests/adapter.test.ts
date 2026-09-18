@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { sourceTurnFailureReason, sourceTurnFromMessages } from "@memmy/agent-source-core";
 import { createCursorSourceAdapter } from "../index.js";
 import { readCursorVscdb } from "../vscdb-reader.js";
 import { discoverCursorWorkspaces } from "../workspace-discovery.js";
@@ -20,47 +19,27 @@ afterEach(() => {
 });
 
 describe("cursor source adapter", () => {
-  it("stages one native turn per user bubble with tools paired by tool call id", async () => {
-    const globalState = createCursorGlobalStateFixture();
-
-    const messages = await collect(readCursorVscdb(globalState.stateDbPath));
-    const turn = sourceTurnFromMessages(messages.filter((message) => message.rawMeta.sourceTurnId === "bubble-user-1"));
-
-    expect(turn).toMatchObject({
-      source: "cursor",
-      conversationId: "composer-1",
-      turnId: "bubble-user-1",
-      completionEvidence: "assistant_text:bubble-assistant-1",
-      startedAt: "2026-06-01T09:04:35.523Z",
-      completedAt: "2026-06-01T09:04:57.329Z",
-      answer: "I can help with the Cursor global storage format.",
-      status: "succeeded"
-    });
-    expect(turn?.query).toBe("Please remember OPENAI_API_KEY=[REDACTED:openai_api_key]");
-    expect(turn?.toolCalls).toEqual([
-      expect.objectContaining({ id: "call-read-1", name: "read_file_v2", status: "completed", output: "file body" })
-    ]);
-  });
-
-  it("keeps a turn without a closing assistant text unsubmitted so the scan can retry it", async () => {
-    const globalState = createCursorGlobalStateFixture({ closingAssistantText: "" });
-
-    const messages = await collect(readCursorVscdb(globalState.stateDbPath));
-
-    expect(sourceTurnFromMessages(messages)).toBeNull();
-    expect(sourceTurnFailureReason(messages)).toBe("turn_incomplete");
-  });
-
-  it("does not stage subagent chats", async () => {
-    const globalState = createCursorGlobalStateFixture({ isSubagent: true });
-
-    await expect(collect(readCursorVscdb(globalState.stateDbPath))).resolves.toEqual([]);
-  });
-
-  it("treats a workspace database without chat tables as an empty history", async () => {
+  it("reads raw Cursor messages from state.vscdb as an async iterable", async () => {
     const workspace = createCursorWorkspaceFixture();
 
-    await expect(collect(readCursorVscdb(workspace.stateDbPath))).resolves.toEqual([]);
+    const messages = await collect(readCursorVscdb(workspace.stateDbPath));
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        messageId: "msg-user-1",
+        conversationId: "conv-1",
+        role: "user",
+        content: expect.stringContaining("OPENAI_API_KEY"),
+        createdAt: "2026-05-28T10:00:00.000Z"
+      }),
+      expect.objectContaining({
+        messageId: "msg-assistant-1",
+        conversationId: "conv-1",
+        role: "assistant",
+        content: "I can help with that.",
+        createdAt: "2026-05-28T10:00:01.000Z"
+      })
+    ]);
   });
 
   it("discovers Cursor workspaces with workspace path and git root", async () => {
@@ -87,15 +66,47 @@ describe("cursor source adapter", () => {
     await expect(collect(createCursorSourceAdapter({ storageRoot }).scan({}))).resolves.toEqual([]);
   });
 
-  it("streams staged ConversationMessage values from globalStorage and reports progress", async () => {
-    const globalState = createCursorGlobalStateFixture();
+  it("streams redacted ConversationMessage values and reports progress", async () => {
+    const workspace = createCursorWorkspaceFixture();
     const progressPhases: string[] = [];
+    const adapter = createCursorSourceAdapter({
+      storageRoot: workspace.storageRoot
+    });
+
+    const messages = await collect(
+      adapter.scan({
+        onProgress: (progress) => progressPhases.push(progress.phase)
+      })
+    );
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        messageId: "msg-user-1",
+        sourceId: "cursor",
+        conversationId: "conv-1",
+        role: "user",
+        content: "Please remember OPENAI_API_KEY=[REDACTED:openai_api_key]",
+        workspacePath: workspace.projectPath,
+        gitRoot: workspace.projectPath
+      }),
+      expect.objectContaining({
+        messageId: "msg-assistant-1",
+        sourceId: "cursor",
+        conversationId: "conv-1",
+        role: "assistant"
+      })
+    ]);
+    expect(progressPhases).toEqual(expect.arrayContaining(["discover", "read", "redact", "emit", "done"]));
+  });
+
+  it("streams Cursor globalStorage composer bubble messages", async () => {
+    const globalState = createCursorGlobalStateFixture();
     const adapter = createCursorSourceAdapter({
       storageRoot: globalState.storageRoot,
       globalStateDbPath: globalState.stateDbPath
     });
 
-    const messages = await collect(adapter.scan({ onProgress: (progress) => progressPhases.push(progress.phase) }));
+    const messages = await collect(adapter.scan({}));
 
     expect(messages).toEqual([
       expect.objectContaining({
@@ -107,7 +118,6 @@ describe("cursor source adapter", () => {
         workspacePath: null,
         gitRoot: null
       }),
-      expect.objectContaining({ messageId: "bubble-tool-1", sourceId: "cursor", role: "tool" }),
       expect.objectContaining({
         messageId: "bubble-assistant-1",
         sourceId: "cursor",
@@ -116,8 +126,6 @@ describe("cursor source adapter", () => {
         content: "I can help with the Cursor global storage format."
       })
     ]);
-    expect(messages.every((message) => message.rawMeta.sourceTurnState === "complete")).toBe(true);
-    expect(progressPhases).toEqual(expect.arrayContaining(["discover", "read", "redact", "emit", "done"]));
   });
 });
 
@@ -160,8 +168,12 @@ function createCursorWorkspaceFixture(): {
   return { storageRoot, projectPath, stateDbPath };
 }
 
-/** Mirrors Cursor globalStorage: a composerHeaders row plus composerData and bubble rows. */
-function createCursorGlobalStateFixture(options: { closingAssistantText?: string; isSubagent?: boolean } = {}): {
+/**
+ * Creates a fixture for the newer Cursor globalStorage.
+ *
+ * @returns Path to a test database containing only cursorDiskKV bubble messages.
+ */
+function createCursorGlobalStateFixture(): {
   storageRoot: string;
   stateDbPath: string;
 } {
@@ -173,62 +185,81 @@ function createCursorGlobalStateFixture(options: { closingAssistantText?: string
   mkdirSync(storageRoot, { recursive: true });
   mkdirSync(globalStoragePath, { recursive: true });
 
-  const bubbles = [
-    {
-      bubbleId: "bubble-user-1",
-      type: 1 as const,
-      text: "Please remember OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD",
-      createdAt: "2026-06-01T09:04:35.523Z",
-      requestId: "generation-1"
-    },
-    { bubbleId: "bubble-thinking-1", type: 2 as const, text: "", createdAt: "2026-06-01T09:04:50.100Z" },
-    {
-      bubbleId: "bubble-tool-1",
-      type: 2 as const,
-      text: "",
-      createdAt: "2026-06-01T09:04:52.000Z",
-      toolFormerData: {
-        toolCallId: "call-read-1",
-        name: "read_file_v2",
-        status: "completed",
-        rawArgs: "{\"path\":\"/tmp/example.md\"}",
-        result: "file body"
-      }
-    },
-    {
-      bubbleId: "bubble-assistant-1",
-      type: 2 as const,
-      text: options.closingAssistantText ?? "I can help with the Cursor global storage format.",
-      createdAt: "2026-06-01T09:04:57.329Z"
-    }
-  ];
-
   const db = new DatabaseSync(stateDbPath);
   try {
     db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    db.exec("CREATE TABLE composerHeaders (composerId TEXT PRIMARY KEY, isSubagent INTEGER, subagentTypeName TEXT)");
-    db.prepare("INSERT INTO composerHeaders (composerId, isSubagent, subagentTypeName) VALUES (?, ?, ?)")
-      .run("composer-1", options.isSubagent ? 1 : 0, options.isSubagent ? "explore" : "");
-    db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)").run(
-      "composerData:composer-1",
-      JSON.stringify({
-        composerId: "composer-1",
-        fullConversationHeadersOnly: bubbles.map((bubble) => ({
-          bubbleId: bubble.bubbleId,
-          type: bubble.type,
-          createdAt: bubble.createdAt
-        }))
-      })
-    );
-    for (const bubble of bubbles) {
-      db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)").run(
-        `bubbleId:composer-1:${bubble.bubbleId}`,
-        JSON.stringify({ _v: 3, ...bubble })
-      );
-    }
+    insertCursorBubble(db, {
+      composerId: "composer-1",
+      bubbleId: "bubble-user-1",
+      type: 1,
+      text: "Please remember OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCD",
+      createdAt: "2026-06-01T09:04:35.523Z"
+    });
+    insertCursorBubble(db, {
+      composerId: "composer-1",
+      bubbleId: "bubble-thinking-1",
+      type: 2,
+      text: "",
+      createdAt: "2026-06-01T09:04:56.862Z"
+    });
+    insertCursorBubble(db, {
+      composerId: "composer-1",
+      bubbleId: "bubble-assistant-1",
+      type: 2,
+      text: "I can help with the Cursor global storage format.",
+      createdAt: "2026-06-01T09:04:57.329Z"
+    });
   } finally {
     db.close();
   }
 
   return { storageRoot, stateDbPath };
+}
+
+/**
+ * Writes a Cursor bubble fixture.
+ *
+ * @param db Test SQLite connection.
+ * @param input Bubble fields.
+ */
+function insertCursorBubble(
+  db: DatabaseSync,
+  input: {
+    /**
+     * Field meaning:
+     * - composerId: Cursor composer conversation id.
+     */
+    composerId: string;
+    /**
+     * Field meaning:
+     * - bubbleId: id of a single Cursor bubble.
+     */
+    bubbleId: string;
+    /**
+     * Field meaning:
+     * - type: Cursor bubble type; 1 is user, 2 is assistant.
+     */
+    type: 1 | 2;
+    /**
+     * Field meaning:
+     * - text: visible text of the bubble.
+     */
+    text: string;
+    /**
+     * Field meaning:
+     * - createdAt: bubble creation time.
+     */
+    createdAt: string;
+  }
+): void {
+  db.prepare("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)").run(
+    `bubbleId:${input.composerId}:${input.bubbleId}`,
+    JSON.stringify({
+      _v: 3,
+      type: input.type,
+      bubbleId: input.bubbleId,
+      text: input.text,
+      createdAt: input.createdAt
+    })
+  );
 }
