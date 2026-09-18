@@ -1606,3 +1606,4 @@ export const TokenQuotaEligibilitySchema = z.object({
     latestReviewNote: z.string().nullable()
 });
 export type TokenQuotaEligibility = z.infer<typeof TokenQuotaEligibilitySchema>;
+export * from './desktop-screen-capture.js';
