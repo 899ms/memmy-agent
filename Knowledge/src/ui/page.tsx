@@ -309,10 +309,13 @@ export function KnowledgePage({
   const uploadingRef = useRef(false);
   const folderIdRef = useRef(folderId);
   folderIdRef.current = folderId;
+  const hiddenFileIds = useRef(new Set<string>());
+  const hiddenFolderIds = useRef(new Set<string>());
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
   const [shareUserId, setShareUserId] = useState("");
+  const [shareFailed, setShareFailed] = useState(false);
   const [members, setMembers] = useState<KnowledgeMember[]>([]);
   const api = useMemo(
     () =>
@@ -429,6 +432,8 @@ export function KnowledgePage({
     setFolderDeleteTarget(null);
     setChecked(new Set());
     setBatchDeleteOpen(false);
+    hiddenFileIds.current = new Set();
+    hiddenFolderIds.current = new Set();
   }, [activeId]);
   useEffect(() => {
     setMembers([]);
@@ -445,7 +450,8 @@ export function KnowledgePage({
       controller.signal,
     )
       .then((value) => {
-        if (!controller.signal.aborted) setFolders(value.folders ?? []);
+        if (!controller.signal.aborted)
+          setFolders(visibleFolders(value.folders ?? []));
       })
       .catch((error) => {
         if (!controller.signal.aborted && !isAbortError(error)) setFolders([]);
@@ -473,7 +479,7 @@ export function KnowledgePage({
           controller.signal,
         );
         if (controller.signal.aborted) return;
-        setListing(value);
+        setListing(visibleListing(value));
         setError((current) => (current === filesUnavailable ? "" : current));
         // Refresh processing files and freshly uploaded files without resetting the management form.
         if (
@@ -520,7 +526,8 @@ export function KnowledgePage({
       controller.signal,
     )
       .then((value) => {
-        if (!controller.signal.aborted) setTreeFiles(value.files ?? []);
+        if (!controller.signal.aborted)
+          setTreeFiles(visibleFiles(value.files ?? []));
       })
       .catch((error) => {
         if (!controller.signal.aborted && !isAbortError(error))
@@ -561,6 +568,83 @@ export function KnowledgePage({
       document.removeEventListener("keydown", escape);
     };
   }, [menuOpen, addMenuOpen, rowMenu, fileSearchOpen]);
+  function failedMessage(error: unknown) {
+    const serverMessage =
+      error instanceof Error &&
+      error.message &&
+      !/failed to fetch|network ?error|load failed|abort/i.test(error.message)
+        ? error.message
+        : "";
+    return (
+      serverMessage ||
+      (zh
+        ? "知识库服务暂时不可用，请稍后重试。"
+        : "Knowledge service is temporarily unavailable. Please try again later.")
+    );
+  }
+  function visibleFiles(files: KnowledgeFile[]) {
+    const hidden = hiddenFileIds.current;
+    return hidden.size === 0
+      ? files
+      : files.filter((file) => !hidden.has(file.id));
+  }
+  function visibleListing(value: KnowledgeFiles): KnowledgeFiles {
+    const hidden = hiddenFileIds.current;
+    if (hidden.size === 0) return value;
+    const files = value.files.filter((file) => !hidden.has(file.id));
+    return {
+      ...value,
+      files,
+      total: Math.max(0, value.total - (value.files.length - files.length)),
+    };
+  }
+  function visibleFolders(list: KnowledgeFolder[]) {
+    const hidden = hiddenFolderIds.current;
+    return hidden.size === 0
+      ? list
+      : list.filter((folder) => !hidden.has(folder.id));
+  }
+  function hideFiles(ids: Iterable<string>) {
+    const next = new Set(hiddenFileIds.current);
+    for (const id of ids) next.add(id);
+    hiddenFileIds.current = next;
+    setListing((current) => (current ? visibleListing(current) : current));
+    setTreeFiles((current) => (current ? visibleFiles(current) : current));
+  }
+  function hideFolders(ids: Iterable<string>) {
+    const next = new Set(hiddenFolderIds.current);
+    for (const id of ids) next.add(id);
+    hiddenFolderIds.current = next;
+    setFolders((current) => visibleFolders(current));
+  }
+  function unhideFiles(ids: Iterable<string>) {
+    const next = new Set(hiddenFileIds.current);
+    for (const id of ids) next.delete(id);
+    hiddenFileIds.current = next;
+  }
+  function unhideFolders(ids: Iterable<string>) {
+    const next = new Set(hiddenFolderIds.current);
+    for (const id of ids) next.delete(id);
+    hiddenFolderIds.current = next;
+  }
+  function descendantFolderIds(rootId: string) {
+    const ids = new Set<string>([rootId]);
+    let grown = true;
+    while (grown) {
+      grown = false;
+      for (const folder of folders) {
+        if (folder.parentId && ids.has(folder.parentId) && ids.add(folder.id))
+          grown = true;
+      }
+    }
+    return [...ids];
+  }
+  function filesInFolders(folderIds: Iterable<string>) {
+    const targets = new Set(folderIds);
+    return [...(listing?.files ?? []), ...(treeFiles ?? [])]
+      .filter((file) => file.folderId && targets.has(file.folderId))
+      .map((file) => file.id);
+  }
   async function run(operation: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -568,14 +652,7 @@ export function KnowledgePage({
       await operation();
     } catch (error) {
       console.error("knowledge request failed", error);
-      // 服务端返回的是可读文案（如“不支持的文档格式…”），优先展示；网络类错误回退到通用提示
-      const serverMessage =
-        error instanceof Error &&
-        error.message &&
-        !/failed to fetch|network ?error|load failed|abort/i.test(error.message)
-          ? error.message
-          : "";
-      setError(serverMessage || (zh ? "知识库服务暂时不可用，请稍后重试。" : "Knowledge service is temporarily unavailable. Please try again later."));
+      setError(failedMessage(error));
     } finally {
       setBusy(false);
     }
@@ -605,21 +682,32 @@ export function KnowledgePage({
       .catch((error) => {
         acceptSettings(snapshot);
         console.error("knowledge request failed", error);
-        const serverMessage =
-          error instanceof Error &&
-          error.message &&
-          !/failed to fetch|network ?error|load failed|abort/i.test(
-            error.message,
-          )
-            ? error.message
-            : "";
-        setError(
-          serverMessage ||
-            (zh
-              ? "知识库服务暂时不可用，请稍后重试。"
-              : "Knowledge service is temporarily unavailable. Please try again later."),
-        );
+        setError(failedMessage(error));
       });
+  }
+  function confirmDeleteFile() {
+    if (!active || !fileDeleteTarget) return;
+    const target = fileDeleteTarget;
+    const listingSnapshot = listing;
+    const treeSnapshot = treeFiles;
+    hideFiles([target.id]);
+    setFileDeleteTarget(null);
+    setChecked((current) => {
+      const next = new Set(current);
+      next.delete(`file:${target.id}`);
+      return next;
+    });
+    void api(
+      `/bases/${encodeURIComponent(active.id)}/files/${encodeURIComponent(target.id)}`,
+      "DELETE",
+      { page },
+    ).catch((error) => {
+      unhideFiles([target.id]);
+      setListing(listingSnapshot);
+      setTreeFiles(treeSnapshot);
+      console.error("knowledge request failed", error);
+      setError(failedMessage(error));
+    });
   }
   function flushListRefresh() {
     clearTimeout(refreshTimer.current);
@@ -934,22 +1022,38 @@ export function KnowledgePage({
     const fileIds = [...checked]
       .filter((key) => key.startsWith("file:"))
       .map((key) => key.slice("file:".length));
-    void run(async () => {
-      await Promise.all([
-        ...folderIds.map((id) =>
-          api(`/folders/${encodeURIComponent(id)}`, "DELETE", { mode: "all" }),
+    const doomedFolders = [...new Set(folderIds.flatMap(descendantFolderIds))];
+    const doomedFiles = [
+      ...new Set([...fileIds, ...filesInFolders(doomedFolders)]),
+    ];
+    const listingSnapshot = listing;
+    const treeSnapshot = treeFiles;
+    const foldersSnapshot = folders;
+    hideFiles(doomedFiles);
+    hideFolders(doomedFolders);
+    if (crumbPath.some((folder) => doomedFolders.includes(folder.id)))
+      setFolderId("");
+    setBatchDeleteOpen(false);
+    setChecked(new Set());
+    void Promise.all([
+      ...folderIds.map((id) =>
+        api(`/folders/${encodeURIComponent(id)}`, "DELETE", { mode: "all" }),
+      ),
+      ...fileIds.map((id) =>
+        api(
+          `/bases/${encodeURIComponent(baseId)}/files/${encodeURIComponent(id)}`,
+          "DELETE",
+          { page },
         ),
-        ...fileIds.map((id) =>
-          api(
-            `/bases/${encodeURIComponent(baseId)}/files/${encodeURIComponent(id)}`,
-            "DELETE",
-            { page },
-          ),
-        ),
-      ]);
-      setBatchDeleteOpen(false);
-      setChecked(new Set());
-      setRefresh((value) => value + 1);
+      ),
+    ]).catch((error) => {
+      unhideFiles(doomedFiles);
+      unhideFolders(doomedFolders);
+      setListing(listingSnapshot);
+      setTreeFiles(treeSnapshot);
+      setFolders(foldersSnapshot);
+      console.error("knowledge request failed", error);
+      setError(failedMessage(error));
     });
   }
   function closeFileSearch() {
@@ -1045,14 +1149,30 @@ export function KnowledgePage({
   function commitDeleteFolder() {
     if (!folderDeleteTarget) return;
     const target = folderDeleteTarget;
-    void run(async () => {
-      await api(`/folders/${encodeURIComponent(target.id)}`, "DELETE", {
-        mode: folderDeleteMode,
+    const mode = folderDeleteMode;
+    const doomedFolders =
+      mode === "all" ? descendantFolderIds(target.id) : [target.id];
+    const doomedFiles = mode === "all" ? filesInFolders(doomedFolders) : [];
+    const listingSnapshot = listing;
+    const treeSnapshot = treeFiles;
+    const foldersSnapshot = folders;
+    hideFolders(doomedFolders);
+    hideFiles(doomedFiles);
+    if (crumbPath.some((folder) => folder.id === target.id)) setFolderId("");
+    setFolderDeleteTarget(null);
+    void api(`/folders/${encodeURIComponent(target.id)}`, "DELETE", { mode })
+      .then(() => {
+        if (mode === "out") setRefresh((value) => value + 1);
+      })
+      .catch((error) => {
+        unhideFolders(doomedFolders);
+        unhideFiles(doomedFiles);
+        setListing(listingSnapshot);
+        setTreeFiles(treeSnapshot);
+        setFolders(foldersSnapshot);
+        console.error("knowledge request failed", error);
+        setError(failedMessage(error));
       });
-      if (crumbPath.some((folder) => folder.id === target.id)) setFolderId("");
-      setFolderDeleteTarget(null);
-      setRefresh((value) => value + 1);
-    });
   }
 
   function kbItem(base: KnowledgeBase) {
@@ -1304,6 +1424,7 @@ export function KnowledgePage({
                             role="menuitem"
                             onClick={() => {
                               setMenuOpen(false);
+                              setShareFailed(false);
                               setShareOpen(true);
                             }}
                           >
@@ -1861,10 +1982,10 @@ export function KnowledgePage({
       {/* ============ 创建知识库（仅名称） ============ */}
       {settings && createOpen && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-create-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setCreateOpen(false)}><I d={IC.close} size={14} /></button><h2 id="mk-create-title">{t("创建个人知识库", "New knowledge base")}</h2><form onSubmit={(event) => { event.preventDefault(); const value = name.trim(); if (!value) return; void run(async () => { const before = new Set((settings?.bases ?? []).map((base) => base.id)); const next = await api<KnowledgeSettings>("/bases", "POST", { name: value }); acceptSettings(next); const created = next.bases.find((base) => !before.has(base.id)); if (created) setActiveId(created.id); setName(""); setCreateOpen(false); }); }}><label>{t("名称", "Name")}<NameField value={name} onChange={setName} placeholder={t("请输入知识库名称", "Knowledge base name")} /></label><div className="mk-modal-actions"><button type="button" onClick={() => setCreateOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit" disabled={!settings.serviceAvailable}>{t("确认创建", "Create")}</button></div></form></div></div>}
       {settings && renameOpen && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-rename-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setRenameOpen(false)}><I d={IC.close} size={14} /></button><h2 id="mk-rename-title">{t("重命名知识库", "Rename knowledge base")}</h2><p>{t("新名称会同步给所有已共享的用户，对方刷新后即可看到。", "The new name syncs to everyone this base is shared with once they refresh.")}</p><form onSubmit={(event) => { event.preventDefault(); const value = renameName.trim(); if (!value || value === active.name) { setRenameOpen(false); return; } void run(async () => { acceptSettings(await api<KnowledgeSettings>(`/bases/${encodeURIComponent(active.id)}`, "PATCH", { name: value })); setRenameName(""); setRenameOpen(false); }); }}><label>{t("名称", "Name")}<NameField value={renameName} onChange={setRenameName} /></label><div className="mk-modal-actions"><button type="button" onClick={() => setRenameOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-primary" type="submit" disabled={!renameName.trim() || renameName.trim() === active.name}>{t("保存", "Save")}</button></div></form></div></div>}
-      {settings && shareOpen && active && !active.shared && <div className="mk-modal-backdrop"><div className="mk-action-modal mk-share-modal" role="dialog" aria-modal="true" aria-labelledby="mk-share-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setShareOpen(false)}><I d={IC.close} size={14} /></button><h2 id="mk-share-title">{t("共享管理", "Sharing")}</h2><p className="mk-share-hint">{t("输入对方的 Memmy 用户 ID 即可共享此知识库；对方可在「账户」页面复制自己的 ID。被共享的用户可以查看文档并参与召回。", "Share by entering the other person's Memmy user ID. They can copy it from the Account page. Shared users can view documents and use recall.")}</p><form className="mk-share-form" onSubmit={(event) => { event.preventDefault(); const userId = shareUserId.trim(); if (!userId) return; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/members`, "POST", { userId }); setShareUserId(""); const value = await api<{ members: KnowledgeMember[] }>(`/bases/${encodeURIComponent(active.id)}/members`); setMembers(value.members ?? []); acceptSettings(await api<KnowledgeSettings>("/settings")); }); }}><input value={shareUserId} onChange={(event) => setShareUserId(event.target.value)} placeholder={t("输入用户 ID", "Enter user ID")} aria-label={t("Memmy 用户 ID", "Memmy user ID")} required /><button className="mk-primary" type="submit" disabled={!shareUserId.trim()}>{t("添加", "Add")}</button></form>{activeMembers.length ? (<ul className="mk-members">{activeMembers.map((member) => (<li key={member.userId}><span className="mk-member-avatar" aria-hidden="true">{(member.name || "?").trim().charAt(0).toUpperCase()}</span><div className="mk-member-meta"><strong>{member.name}</strong><small>ID {member.userId}</small></div><button className="mk-member-revoke" type="button" onClick={() => setRevokeTarget(member)}>{t("移除", "Remove")}</button></li>))}</ul>) : (<p className="mk-share-empty">{t("暂未共享给其他用户。", "Not shared with anyone yet.")}</p>)}</div></div>}
+      {settings && shareOpen && active && !active.shared && <div className="mk-modal-backdrop"><div className="mk-action-modal mk-share-modal" role="dialog" aria-modal="true" aria-labelledby="mk-share-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => { setShareOpen(false); setShareFailed(false); }}><I d={IC.close} size={14} /></button><h2 id="mk-share-title">{t("共享管理", "Sharing")}</h2><p className="mk-share-hint">{t("输入对方的 Memmy 用户 ID 即可共享此知识库；对方可在「账户」页面复制自己的 ID。被共享的用户可以查看文档并参与召回。", "Share by entering the other person's Memmy user ID. They can copy it from the Account page. Shared users can view documents and use recall.")}</p><form className="mk-share-form" onSubmit={(event) => { event.preventDefault(); const userId = shareUserId.trim(); if (!userId) return; setShareFailed(false); void run(async () => { try { await api(`/bases/${encodeURIComponent(active.id)}/members`, "POST", { userId }); setShareUserId(""); const value = await api<{ members: KnowledgeMember[] }>(`/bases/${encodeURIComponent(active.id)}/members`); setMembers(value.members ?? []); acceptSettings(await api<KnowledgeSettings>("/settings")); } catch { setShareFailed(true); } }); }}><input value={shareUserId} onChange={(event) => { setShareUserId(event.target.value); setShareFailed(false); }} placeholder={t("输入用户 ID", "Enter user ID")} aria-label={t("Memmy 用户 ID", "Memmy user ID")} required /><button className="mk-primary" type="submit" disabled={!shareUserId.trim()}>{t("添加", "Add")}</button></form>{shareFailed ? <p className="mk-share-error" role="alert">{t("用户不存在", "User not found")}</p> : null}{activeMembers.length ? (<ul className="mk-members">{activeMembers.map((member) => (<li key={member.userId}><span className="mk-member-avatar" aria-hidden="true">{(member.name || "?").trim().charAt(0).toUpperCase()}</span><div className="mk-member-meta"><strong>{member.name}</strong><small>ID {member.userId}</small></div><button className="mk-member-revoke" type="button" onClick={() => setRevokeTarget(member)}>{t("移除", "Remove")}</button></li>))}</ul>) : (<p className="mk-share-empty">{t("暂未共享给其他用户。", "Not shared with anyone yet.")}</p>)}</div></div>}
       {revokeTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-revoke-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setRevokeTarget(null)}><I d={IC.close} size={14} /></button><h2 id="mk-revoke-title">{t("取消分享", "Unshare knowledge base")}</h2><p>{t(`确定取消与“${revokeTarget.name}（${revokeTarget.userId}）”的共享吗？对方刷新后将无法继续访问此知识库。`, `Unshare this knowledge base from “${revokeTarget.name} (${revokeTarget.userId})”? They will lose access after refreshing.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setRevokeTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const target = revokeTarget; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/members/${encodeURIComponent(target.userId)}`, "DELETE"); setMembers((current) => current.filter((item) => item.userId !== target.userId)); setRevokeTarget(null); acceptSettings(await api<KnowledgeSettings>("/settings")); }); }}>{t("确认取消分享", "Unshare")}</button></div></div></div>}
       {deleteOpen && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-delete-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setDeleteOpen(false)}><I d={IC.close} size={14} /></button><h2 id="mk-delete-title">{t("删除知识库", "Delete knowledge base")}</h2><p>{t("彻底删除此知识库及全部文件？删除后无法恢复。", "Permanently delete this knowledge base and all its files? This cannot be undone.")}</p><div className="mk-modal-actions"><button type="button" onClick={() => setDeleteOpen(false)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={confirmDeleteActive}>{t("确认删除", "Delete")}</button></div></div></div>}
-      {fileDeleteTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-file-delete-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setFileDeleteTarget(null)}><I d={IC.close} size={14} /></button><h2 id="mk-file-delete-title">{t("删除文件", "Delete file")}</h2><p>{t(`从云端删除“${fileDeleteTarget.name}”？此操作也会影响该知识库的其他使用方。`, `Delete “${fileDeleteTarget.name}” from the cloud? This also affects other users of this knowledge base.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setFileDeleteTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={() => { const target = fileDeleteTarget; void run(async () => { await api(`/bases/${encodeURIComponent(active.id)}/files/${encodeURIComponent(target.id)}`, "DELETE", { page }); setFileDeleteTarget(null); setRefresh((value) => value + 1); }); }}>{t("确认删除", "Delete")}</button></div></div></div>}
+      {fileDeleteTarget && active && <div className="mk-modal-backdrop"><div className="mk-action-modal" role="dialog" aria-modal="true" aria-labelledby="mk-file-delete-title"><button className="mk-modal-close" aria-label={t("关闭", "Close")} onClick={() => setFileDeleteTarget(null)}><I d={IC.close} size={14} /></button><h2 id="mk-file-delete-title">{t("删除文件", "Delete file")}</h2><p>{t(`从云端删除“${fileDeleteTarget.name}”？此操作也会影响该知识库的其他使用方。`, `Delete “${fileDeleteTarget.name}” from the cloud? This also affects other users of this knowledge base.`)}</p><div className="mk-modal-actions"><button type="button" onClick={() => setFileDeleteTarget(null)}>{t("取消", "Cancel")}</button><button className="mk-danger" type="button" onClick={confirmDeleteFile}>{t("确认删除", "Delete")}</button></div></div></div>}
       {/* ---------- 行右键菜单 ---------- */}
       {rowMenu && (() => {
         const folder = rowMenu.kind === "folder" ? folderById.get(rowMenu.id) : undefined;
@@ -2145,6 +2266,7 @@ const styles = `
 .mk-member-meta small{font-size:11px;color:var(--mk-ter);margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .memmy-knowledge .mk-member-revoke{border:0;background:transparent;font-size:12px;color:var(--mk-ter);padding:5px 8px;border-radius:7px}
 .memmy-knowledge .mk-member-revoke:hover{color:#c05a55;background:#faf0ef}
+.mk-share-modal .mk-share-error{font-size:12px;color:#c05a55;margin:8px 0 0}
 .mk-share-empty{font-size:12px;color:var(--mk-ter);margin:14px 0 0!important}
 @media(max-width:560px){.mk-share-form{flex-wrap:wrap}.mk-share-form .mk-primary{width:100%}}
 

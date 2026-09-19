@@ -137,30 +137,39 @@ it("batch deletes selected folders and files", async () => {
     bases: [{ id: "base-1", name: "小治的知识库", selected: true }],
   };
   const calls: { url: string; method: string; body?: Record<string, unknown> }[] = [];
+  let releaseDelete: ((value: Response) => void) | undefined;
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: URL, init: RequestInit) => {
+    vi.fn((url: URL, init: RequestInit) => {
       const body = init.body ? JSON.parse(String(init.body)) : undefined;
       calls.push({ url: String(url), method: init.method ?? "GET", body });
       const path = String(url);
+      if (init.method === "DELETE")
+        return new Promise<Response>((resolve) => {
+          releaseDelete = resolve;
+        });
       if (path.includes("/files?") && init.method !== "POST")
-        return new Response(
-          JSON.stringify({
-            files: [
-              { id: "a1", name: "指南.pdf", status: "AVAILABLE", message: "" },
-              { id: "a2", name: "报表.xlsx", status: "AVAILABLE", message: "" },
-            ],
-            total: 2,
-            page: 1,
-          }),
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                { id: "a1", name: "指南.pdf", status: "AVAILABLE", message: "" },
+                { id: "a2", name: "报表.xlsx", status: "AVAILABLE", message: "" },
+              ],
+              total: 2,
+              page: 1,
+            }),
+          ),
         );
       if (path.endsWith("/folders"))
-        return new Response(
-          JSON.stringify({
-            folders: [{ id: "f1", parentId: "", name: "产品资料" }],
-          }),
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              folders: [{ id: "f1", parentId: "", name: "产品资料" }],
+            }),
+          ),
         );
-      return new Response(JSON.stringify(state));
+      return Promise.resolve(new Response(JSON.stringify(state)));
     }),
   );
   const container = document.createElement("div");
@@ -219,8 +228,12 @@ it("batch deletes selected folders and files", async () => {
         call.url.includes("/bases/base-1/files/a1"),
     ),
   ).toBe(true);
-  // 完成后清空选择，操作条消失
   expect(container.querySelector(".mk-batchbar")).toBeNull();
+  expect(container.textContent).not.toContain("产品资料");
+  expect(container.textContent).not.toContain("指南.pdf");
+  expect(container.textContent).toContain("报表.xlsx");
+  expect(container.querySelector(".mk-modal-backdrop")).toBeNull();
+  expect(releaseDelete).toBeDefined();
 });
 
 it("highlights matching text in file and folder names while searching", async () => {

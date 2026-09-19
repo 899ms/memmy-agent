@@ -200,6 +200,84 @@ it("removes a knowledge base from the list without waiting for delete to finish"
   expect(releaseDelete).toBeDefined();
 });
 
+it("removes a file from the list without waiting for delete to finish", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state: KnowledgeSettings = {
+    authenticated: true,
+    enabled: true,
+    serviceAvailable: true,
+    bases: [{ id: "base-1", name: "资料库", selected: true }],
+  };
+  let releaseDelete: ((value: Response) => void) | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: URL, init: RequestInit) => {
+      const path = String(url);
+      if (init.method === "DELETE" && path.includes("/files/big"))
+        return new Promise<Response>((resolve) => {
+          releaseDelete = resolve;
+        });
+      if (path.includes("/files"))
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              files: [
+                {
+                  id: "big",
+                  name: "大文件.pdf",
+                  status: "AVAILABLE",
+                  message: "",
+                },
+                {
+                  id: "small",
+                  name: "小文件.txt",
+                  status: "AVAILABLE",
+                  message: "",
+                },
+              ],
+              total: 2,
+              page: 1,
+            }),
+          ),
+        );
+      if (path.includes("/folders"))
+        return Promise.resolve(new Response(JSON.stringify({ folders: [] })));
+      return Promise.resolve(new Response(JSON.stringify(state)));
+    }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(
+      <KnowledgePage
+        connection={{
+          baseUrl: "http://localhost:1234",
+          localToken: "local-test",
+        }}
+      />,
+    );
+  });
+  expect(container.textContent).toContain("大文件.pdf");
+  expect(container.textContent).toContain("小文件.txt");
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="删除 大文件.pdf"]')!
+      .click();
+  });
+  expect(container.querySelector("#mk-file-delete-title")).not.toBeNull();
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "确认删除")!
+      .click();
+  });
+  expect(container.querySelector("#mk-file-delete-title")).toBeNull();
+  expect(container.textContent).not.toContain("大文件.pdf");
+  expect(container.textContent).toContain("小文件.txt");
+  expect(container.querySelector(".mk-modal-backdrop")).toBeNull();
+  expect(releaseDelete).toBeDefined();
+});
+
 async function renderKnowledge(state: KnowledgeSettings, onSignIn?: () => void) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -254,6 +332,80 @@ it("shows a centered sign-in empty state without extra copy", async () => {
     signIn!.click();
   });
   expect(onSignIn).toHaveBeenCalledTimes(1);
+});
+
+it("shows share failure inside the modal instead of the page banner", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state: KnowledgeSettings = {
+    authenticated: true,
+    enabled: true,
+    serviceAvailable: true,
+    bases: [{ id: "base-1", name: "资料库", selected: true }],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: URL, init: RequestInit) => {
+      const path = String(url);
+      if (init.method === "POST" && path.includes("/members"))
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "目标用户不存在" }), {
+            status: 404,
+          }),
+        );
+      if (path.includes("/members"))
+        return Promise.resolve(new Response(JSON.stringify({ members: [] })));
+      if (path.includes("/files"))
+        return Promise.resolve(
+          new Response(JSON.stringify({ files: [], total: 0, page: 1 })),
+        );
+      if (path.includes("/folders"))
+        return Promise.resolve(new Response(JSON.stringify({ folders: [] })));
+      return Promise.resolve(new Response(JSON.stringify(state)));
+    }),
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(
+      <KnowledgePage
+        connection={{
+          baseUrl: "http://localhost:1234",
+          localToken: "local-test",
+        }}
+      />,
+    );
+  });
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="更多操作"]')!
+      .click();
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("共享管理"))!
+      .click();
+  });
+  const input = container.querySelector<HTMLInputElement>(
+    '[aria-label="Memmy 用户 ID"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "1111",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>(".mk-share-form .mk-primary")!
+      .click();
+  });
+  const shareError = container.querySelector(".mk-share-modal .mk-share-error");
+  expect(shareError?.textContent).toBe("用户不存在");
+  expect(getComputedStyle(shareError!).color).toBe("#c05a55");
+  expect(container.querySelector(".mk-error")).toBeNull();
+  expect(container.textContent).not.toContain("HTTP 404");
 });
 
 it("shows a centered retry empty state when knowledge is unavailable", async () => {
