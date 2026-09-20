@@ -20,7 +20,6 @@ function makeLoop(): AgentLoop {
     provider: { generation: { maxTokens: 4096 }, getDefaultModel: () => "test-model" },
     config: new Config({ memmyMemory: { enabled: false } }),
     workspace: tmpDir("memmy-task-cancel-"),
-    config: new Config({ memmyMemory: { enabled: false } }),
   });
 }
 
