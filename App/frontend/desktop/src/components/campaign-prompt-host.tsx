@@ -62,7 +62,7 @@ export function CampaignPromptHost() {
 
     const storage = browserStorage();
     const persisted = readCampaignPromptState(storage);
-    if (!shouldOfferCampaignPrompt(persisted)) {
+    if (!shouldOfferCampaignPrompt(persisted, state.bootstrap?.lotteryStatus)) {
       offeredRef.current = true;
       return;
     }
@@ -70,7 +70,7 @@ export function CampaignPromptHost() {
     offeredRef.current = true;
     markCampaignPromptShown(storage);
     setOpen(true);
-  }, [open, preview, surfaceReady]);
+  }, [open, preview, state.bootstrap?.lotteryStatus, surfaceReady]);
 
   if (!open) {
     return null;

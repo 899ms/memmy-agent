@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../i18n/i18n-provider.js";
@@ -36,11 +36,13 @@ describe("NotificationCenter", () => {
     center = null;
     act(() => {
       root.render(
-        <I18nProvider language="zh-CN">
-          <NotificationCenterProvider>
-            <CenterHandle />
-          </NotificationCenterProvider>
-        </I18nProvider>
+        <StrictMode>
+          <I18nProvider language="zh-CN">
+            <NotificationCenterProvider>
+              <CenterHandle />
+            </NotificationCenterProvider>
+          </I18nProvider>
+        </StrictMode>
       );
     });
   });

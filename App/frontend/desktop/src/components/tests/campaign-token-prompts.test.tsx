@@ -4,8 +4,36 @@ import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../i18n/i18n-provider.js";
+import { CampaignPromptHost } from "../campaign-prompt-host.js";
 import { CampaignPrompt } from "../campaign-prompt.js";
 import { NotificationToast } from "../notification-toast.js";
+
+const mocks = vi.hoisted(() => ({
+  openExternalUrl: vi.fn(),
+  appState: {
+    state: {
+      startup: { status: "ready" },
+      navigation: { currentPath: "/main" },
+      bootstrap: {
+        lotteryStatus: {
+          shouldShow: true,
+          startAt: 1790121600000,
+          endAt: 1790812800000,
+          serverNow: 1790456789000,
+          landingUrl: "https://remote.example/ignored"
+        }
+      }
+    }
+  }
+}));
+
+vi.mock("../../state/app-state.js", () => ({
+  useAppState: () => mocks.appState
+}));
+
+vi.mock("../../utils/open-url.js", () => ({
+  openExternalUrl: mocks.openExternalUrl
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -14,6 +42,8 @@ describe("campaign and token credit prompts", () => {
   let root: Root;
 
   beforeEach(() => {
+    window.localStorage.clear();
+    mocks.openExternalUrl.mockClear();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -22,6 +52,31 @@ describe("campaign and token credit prompts", () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.replaceChildren();
+    vi.unstubAllEnvs();
+  });
+
+  it("uses remote status only for eligibility and keeps the project activity URL", async () => {
+    vi.stubEnv("MEMMY_APP_EDITION", "cn");
+    vi.stubEnv("MEMMY_LEGAL_CN_BASE_URL", "https://project-url.example");
+
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+
+    const action = Array.from(document.body.querySelectorAll("button"))
+      .find((button) => button.textContent === "去官网参与活动");
+    expect(action).not.toBeUndefined();
+
+    await act(async () => {
+      action?.click();
+    });
+
+    expect(mocks.openExternalUrl).toHaveBeenCalledWith("https://project-url.example/activity/");
+    expect(mocks.openExternalUrl).not.toHaveBeenCalledWith("https://remote.example/ignored");
   });
 
   it("renders the large feature-update campaign dialog", () => {

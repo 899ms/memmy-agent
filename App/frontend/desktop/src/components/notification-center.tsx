@@ -1,5 +1,5 @@
 /** App-wide notification center: a top-right stack with a queue for overflow. */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { LucideIcon } from "lucide-react";
 import { useTranslation } from "../i18n/use-translation.js";
@@ -47,20 +47,21 @@ function nextNotificationId(): string {
 export function NotificationCenterProvider(props: { children: ReactNode }) {
   const { t } = useTranslation();
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const closeCallbacksRef = useRef(new Map<string, (() => void) | undefined>());
 
   const dismiss = useCallback((id: string) => {
-    setItems((current) => {
-      const target = current.find((item) => item.id === id);
-      if (!target) {
-        return current;
-      }
-      target.onClose?.();
-      return current.filter((item) => item.id !== id);
-    });
+    if (!closeCallbacksRef.current.has(id)) {
+      return;
+    }
+    const onClose = closeCallbacksRef.current.get(id);
+    closeCallbacksRef.current.delete(id);
+    setItems((current) => current.filter((item) => item.id !== id));
+    onClose?.();
   }, []);
 
   const notify = useCallback((input: NotificationInput) => {
     const id = nextNotificationId();
+    closeCallbacksRef.current.set(id, input.onClose);
     setItems((current) => [...current, { ...input, id }]);
     return id;
   }, []);

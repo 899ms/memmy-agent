@@ -7011,7 +7011,7 @@ input[type="checkbox"].check-sky:checked::after {
 
 .memmy-notification-stack {
   position: fixed;
-  top: 4.5rem;
+  top: var(--codex-toolbar-height);
   right: var(--space-5);
   z-index: 30;
   display: flex;
@@ -7023,7 +7023,7 @@ input[type="checkbox"].check-sky:checked::after {
 }
 
 body.memmy-platform-windows:not(.memmy-window-fullscreen) .memmy-notification-stack {
-  top: calc(var(--codex-toolbar-height) + 4.5rem);
+  top: calc(var(--codex-toolbar-height) * 2);
 }
 
 .memmy-notification {
