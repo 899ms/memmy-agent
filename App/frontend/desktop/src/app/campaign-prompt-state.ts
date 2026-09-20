@@ -1,15 +1,11 @@
 /** Local persistence and eligibility for the Mid-Autumn campaign prompt. */
+import type { LotteryStatus } from "@memmy/local-api-contracts";
 
-/** Kill switch — set false to disable the prompt for everyone without a backend UI. */
+/** Build-time safety switch layered on top of the remote campaign status. */
 export const CAMPAIGN_PROMPT_ENABLED = true;
 
 export const CAMPAIGN_PROMPT_STORAGE_KEY = "memmy.campaignPrompt.v1";
 export const CAMPAIGN_PROMPT_MAX_SHOWS = 1;
-
-/** 2026-09-23 00:00 Asia/Shanghai */
-export const CAMPAIGN_PROMPT_START_MS = Date.UTC(2026, 8, 22, 16, 0, 0);
-/** 2026-10-01 00:00 Asia/Shanghai — after 9/30, never show again. */
-export const CAMPAIGN_PROMPT_END_MS = Date.UTC(2026, 8, 30, 16, 0, 0);
 
 export interface CampaignPromptPersistedState {
   showCount: number;
@@ -70,12 +66,15 @@ export function writeCampaignPromptState(
 /** Whether the campaign prompt may be offered on this app open. Login is not required. */
 export function shouldOfferCampaignPrompt(
   state: CampaignPromptPersistedState,
-  nowMs: number = Date.now()
+  remoteStatus: LotteryStatus | null | undefined
 ): boolean {
   if (!CAMPAIGN_PROMPT_ENABLED) {
     return false;
   }
-  if (nowMs < CAMPAIGN_PROMPT_START_MS || nowMs >= CAMPAIGN_PROMPT_END_MS) {
+  if (!remoteStatus?.shouldShow) {
+    return false;
+  }
+  if (remoteStatus.serverNow < remoteStatus.startAt || remoteStatus.serverNow >= remoteStatus.endAt) {
     return false;
   }
   if (state.actioned) {

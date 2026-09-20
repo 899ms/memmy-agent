@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { LotteryStatus } from "@memmy/local-api-contracts";
 import {
-  CAMPAIGN_PROMPT_END_MS,
   CAMPAIGN_PROMPT_MAX_SHOWS,
-  CAMPAIGN_PROMPT_START_MS,
   CAMPAIGN_PROMPT_STORAGE_KEY,
   isCampaignPromptSurfaceReady,
   markCampaignPromptActioned,
@@ -41,7 +40,18 @@ class MemoryStorage implements Storage {
   }
 }
 
-const duringCampaign = CAMPAIGN_PROMPT_START_MS + 24 * 60 * 60 * 1000;
+const duringCampaign = 1790456789000;
+
+function remoteStatus(overrides: Partial<LotteryStatus> = {}): LotteryStatus {
+  return {
+    shouldShow: true,
+    startAt: 1790121600000,
+    endAt: 1790812800000,
+    serverNow: duringCampaign,
+    landingUrl: "https://memmy.cn/activity/mid-autumn",
+    ...overrides
+  };
+}
 
 function emptyState(): CampaignPromptPersistedState {
   return { showCount: 0, dismissedAt: null, actioned: false };
@@ -53,12 +63,17 @@ describe("campaign prompt eligibility", () => {
   });
 
   it("offers the prompt during the campaign window", () => {
-    expect(shouldOfferCampaignPrompt(emptyState(), duringCampaign)).toBe(true);
+    expect(shouldOfferCampaignPrompt(emptyState(), remoteStatus())).toBe(true);
   });
 
-  it("hides the prompt before start and after 9/30", () => {
-    expect(shouldOfferCampaignPrompt(emptyState(), CAMPAIGN_PROMPT_START_MS - 1)).toBe(false);
-    expect(shouldOfferCampaignPrompt(emptyState(), CAMPAIGN_PROMPT_END_MS)).toBe(false);
+  it("fails closed when the remote switch is off or unavailable", () => {
+    expect(shouldOfferCampaignPrompt(emptyState(), remoteStatus({ shouldShow: false }))).toBe(false);
+    expect(shouldOfferCampaignPrompt(emptyState(), undefined)).toBe(false);
+  });
+
+  it("uses server time to enforce the remote campaign window", () => {
+    expect(shouldOfferCampaignPrompt(emptyState(), remoteStatus({ serverNow: 1790121599999 }))).toBe(false);
+    expect(shouldOfferCampaignPrompt(emptyState(), remoteStatus({ serverNow: 1790812800000 }))).toBe(false);
   });
 
   it("is ready on welcome, login, and signed-in routes after boot", () => {
@@ -78,12 +93,12 @@ describe("campaign prompt eligibility", () => {
       showCount: CAMPAIGN_PROMPT_MAX_SHOWS,
       dismissedAt: null,
       actioned: false
-    }, duringCampaign)).toBe(false);
+    }, remoteStatus())).toBe(false);
     expect(shouldOfferCampaignPrompt({
       showCount: 0,
       dismissedAt: null,
       actioned: true
-    }, duringCampaign)).toBe(false);
+    }, remoteStatus())).toBe(false);
   });
 
   it("persists shown, dismissed, and actioned states", () => {
@@ -92,10 +107,10 @@ describe("campaign prompt eligibility", () => {
 
     expect(markCampaignPromptShown(storage)).toMatchObject({ showCount: 1, dismissedAt: null });
     expect(JSON.parse(storage.getItem(CAMPAIGN_PROMPT_STORAGE_KEY) ?? "{}")).toMatchObject({ showCount: 1 });
-    expect(shouldOfferCampaignPrompt(readCampaignPromptState(storage), duringCampaign)).toBe(false);
+    expect(shouldOfferCampaignPrompt(readCampaignPromptState(storage), remoteStatus())).toBe(false);
 
     expect(markCampaignPromptDismissed(storage, duringCampaign).dismissedAt).toBe(duringCampaign);
     expect(markCampaignPromptActioned(storage)).toMatchObject({ actioned: true, dismissedAt: null });
-    expect(shouldOfferCampaignPrompt(readCampaignPromptState(storage), duringCampaign)).toBe(false);
+    expect(shouldOfferCampaignPrompt(readCampaignPromptState(storage), remoteStatus())).toBe(false);
   });
 });
