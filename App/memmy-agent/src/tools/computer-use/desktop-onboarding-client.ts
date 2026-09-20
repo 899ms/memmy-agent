@@ -52,7 +52,7 @@ export class DesktopOnboardingClient {
       };
       const cancel = () => {
         finish();
-        if (this.ipc.connected) { try { this.ipc.send!({ type: `${PREFIX}cancel`, requestId }, () => undefined); } catch {} }
+        if (this.ipc.connected) { try { this.ipc.send!({ type: `${PREFIX}cancel`, requestId }, () => undefined); } catch { /* Ignore cleanup send failures. */ } }
       };
       const receive = (reply: any) => {
         if (reply?.type === `${PREFIX}guide:result` && reply.requestId === requestId) finish(reply.approved === true);

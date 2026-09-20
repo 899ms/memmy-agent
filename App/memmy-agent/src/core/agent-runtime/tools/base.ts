@@ -128,10 +128,12 @@ export abstract class Tool {
   }
 
   static enabled(ctx: any): boolean {
+    void ctx;
     return true;
   }
 
   static create(ctx?: any): Tool {
+    void ctx;
     return new (this as any)() as Tool;
   }
 
