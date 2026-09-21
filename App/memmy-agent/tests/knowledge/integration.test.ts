@@ -49,16 +49,16 @@ it("composes with the unchanged Memory hook and keeps its query and writeback in
       void id;
       void body;
       return {
-      sourceMemoryIds: ["memory-1"],
-      injectedContext: { markdown: "用户偏好安静的酒店。" },
+        sourceMemoryIds: ["memory-1"],
+        injectedContext: { markdown: "用户偏好安静的酒店。" },
       };
     }),
     completeTurn: vi.fn(async (id: string, body: unknown) => {
       void id;
       void body;
       return {
-      rawTurnId: "raw",
-      l1MemoryId: "l1",
+        rawTurnId: "raw",
+        l1MemoryId: "l1",
       };
     }),
     closeSession: vi.fn(async () => ({ ok: true })),
