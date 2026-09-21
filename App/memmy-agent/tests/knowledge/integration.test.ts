@@ -26,7 +26,7 @@ it("composes with the unchanged Memory hook and keeps its query and writeback in
   );
   let enabled = true;
   const cloud = vi.fn(
-    async (_url: string | URL | Request) =>
+    async () =>
       new Response(
         JSON.stringify({
           enabled,
@@ -43,11 +43,11 @@ it("composes with the unchanged Memory hook and keeps its query and writeback in
       userId: "local-user",
       resumed: false,
     })),
-    startTurn: vi.fn(async (_id: string, _body: unknown) => ({
+    startTurn: vi.fn(async () => ({
       sourceMemoryIds: ["memory-1"],
       injectedContext: { markdown: "用户偏好安静的酒店。" },
     })),
-    completeTurn: vi.fn(async (_id: string, _body: unknown) => ({
+    completeTurn: vi.fn(async () => ({
       rawTurnId: "raw",
       l1MemoryId: "l1",
     })),
