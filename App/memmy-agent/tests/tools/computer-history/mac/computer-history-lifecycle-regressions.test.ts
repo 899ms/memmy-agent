@@ -79,6 +79,69 @@ afterEach(async () => {
 });
 
 describe("summary retries and atomic replacement", () => {
+  it("immediately retries the active segment with BYOK while the old account request is pending", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root, segmentId, false);
+    internal(service).segment = segment;
+    (service as unknown as { observationState: string }).observationState = "running";
+    fs.appendFileSync(segment.eventsFile, " ".repeat(4_100));
+    const account = deferred();
+    internal(service).llmRuntime = runtime(() => account.promise);
+    internal(service).writeLiveSummary(segment);
+    const byok = vi.fn(async () => response("Fresh BYOK activity"));
+    service.setLlmRuntime(runtime(byok), "byok");
+    await vi.waitFor(() => expect(service.snapshot().histories[0]?.title).toBe("Fresh BYOK activity"));
+    expect(service.snapshot().observation.state).toBe("running");
+    account.resolve({ content: "agent_chat tokens exhausted", errorCategory: "quota_exhausted" } as any);
+    await account.promise;
+    await Promise.resolve();
+    expect(service.snapshot().observation.narrationErrorCategory).toBeNull();
+  });
+
+  it("switches a pending account summary to BYOK without waiting for the old model", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root);
+    const oldModel = deferred();
+    internal(service).llmRuntime = runtime(() => oldModel.promise);
+    const oldRequest = internal(service).finalizeSegment(segment);
+    const byok = vi.fn(async () => response("BYOK recovered"));
+    service.setLlmRuntime(runtime(byok), "byok");
+    await service.backfillUnwrittenSummaries();
+    expect(byok).toHaveBeenCalled();
+    expect(service.snapshot().observation).toMatchObject({ modelSource: "byok", narrationError: null });
+    expect(service.snapshot().histories.some((entry) => entry.title === "BYOK recovered")).toBe(true);
+    oldModel.resolve({ content: "Account quota exhausted", errorCategory: "quota_exhausted" } as any);
+    await oldRequest;
+    expect(service.snapshot().observation.narrationErrorCategory).toBeNull();
+    expect(service.snapshot().histories.some((entry) => entry.title === "BYOK recovered")).toBe(true);
+  });
+
+  it("exposes BYOK quota exhaustion and clears it when the same provider recovers", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root);
+    let exhausted = true;
+    internal(service).llmRuntime = runtime(async () => exhausted
+      ? { content: "Insufficient balance", finishReason: "error", errorCategory: "quota_exhausted" }
+      : response("Recovered summary"));
+    await internal(service).finalizeSegment(segment);
+    expect(service.snapshot().observation).toMatchObject({ narrationErrorCategory: "quota_exhausted" });
+    expect(service.snapshot().histories[0].title).toBe("Standing summary");
+    exhausted = false;
+    await service.backfillUnwrittenSummaries();
+    expect(service.snapshot().observation).toMatchObject({ narrationError: null, narrationErrorCategory: null });
+    expect(service.snapshot().histories.some((entry) => entry.title === "Recovered summary")).toBe(true);
+  });
+
+  it("clears the previous provider's quota warning when model configuration changes", async () => {
+    const { root, service } = serviceAt();
+    const segment = seed(root);
+    internal(service).llmRuntime = runtime(async () => ({ content: "Insufficient balance", errorCategory: "quota_exhausted" }));
+    await internal(service).finalizeSegment(segment);
+    expect(service.snapshot().observation.narrationErrorCategory).toBe("quota_exhausted");
+    service.setLlmRuntime(null);
+    expect(service.snapshot().observation.narrationErrorCategory).toBeNull();
+  });
+
   it("retries a failed pass with the recovered model in the same process", async () => {
     const { root, service } = serviceAt();
     seed(root, segmentId, false);
@@ -230,7 +293,7 @@ describe("deletion and complete collection clearing", () => {
     expect(service.snapshot().histories).toHaveLength(0);
   });
 
-  it("clear all includes invisible, staged, and raw-only records but preserves the active segment", async () => {
+  it("clear all includes invisible, staged, raw-only records and the active segment", async () => {
     const { root, service } = serviceAt();
     const staged = seed(root);
     const model = deferred();
@@ -241,26 +304,26 @@ describe("deletion and complete collection clearing", () => {
     fs.rmSync(rawOnly.historyFile);
     const active = seed(root, "2026-09-13T02-40-00Z", false);
     internal(service).segment = active;
-    const result = service.clearHistories("all");
+    const result = await service.clearHistories("all");
     expect(result.histories).toHaveLength(0);
-    expect(fs.existsSync(active.eventsFile)).toBe(true);
-    expect(fs.existsSync(active.historyFile)).toBe(true);
+    expect(fs.existsSync(active.eventsFile)).toBe(false);
+    expect(fs.existsSync(active.historyFile)).toBe(false);
     for (const segment of [staged, invisible, rawOnly]) {
       expect(fs.existsSync(segment.directory)).toBe(false);
       expect(fs.existsSync(segment.historyFile)).toBe(false);
     }
     model.resolve(response("Must not return"));
     await pending;
-    expect(fs.readdirSync(path.join(root, "histories"))).toEqual([path.basename(active.historyFile)]);
+    expect(fs.readdirSync(path.join(root, "histories"))).toEqual([]);
   });
 
-  it("clear today retains previous days while deleting pending records for today", () => {
+  it("clear today retains previous days while deleting pending records for today", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 8, 13, 15));
     const { root, service } = serviceAt();
     const today = seed(root, instantId(new Date(2026, 8, 13, 10)), false);
     const yesterday = seed(root, instantId(new Date(2026, 8, 12, 10)), false);
-    service.clearHistories("today");
+    await service.clearHistories("today");
     expect(fs.existsSync(today.eventsFile)).toBe(false);
     expect(fs.existsSync(yesterday.eventsFile)).toBe(true);
     expect(fs.existsSync(yesterday.historyFile)).toBe(true);

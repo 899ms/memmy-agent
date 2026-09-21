@@ -37,15 +37,14 @@ describe("macOS permission guidance", () => {
     expect(computerUsePermissionError("open_computer_use", { ...denied(), isError: false })).toBeNull();
     expect(computerUsePermissionError("open_computer_use", { isError: true, content: [{ type: "text", text: "Computer Use is not allowed to use the app 'test' for safety reasons." }] })).toBeNull();
   });
-  it("opens Settings from a real MCP error without repeating the action", async () => {
+  it("preserves custom MCP permission errors without opening a second settings guide", async () => {
     const show = vi.spyOn(macPermissionSettingsGuide, "show").mockResolvedValue(true);
     const callTool = vi.fn().mockResolvedValue(denied());
     const tool = new MCPToolWrapper({ callTool }, "open_computer_use", { name: "click" });
     const result = await tool.execute({ app: "Notes", element_index: 1 });
     expect(callTool).toHaveBeenCalledTimes(1);
-    expect(show).toHaveBeenCalledWith("computer-use", "accessibility");
+    expect(show).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).toContain(text);
-    expect(JSON.stringify(result)).toContain("Do not claim permission was granted");
   });
   it("preserves ordinary tool results without showing Settings", async () => {
     const show = vi.spyOn(macPermissionSettingsGuide, "show").mockResolvedValue(true);
@@ -85,7 +84,7 @@ describe("recorder requests only required missing permissions", () => {
   });
 });
 
-it("opens Settings after the History recorder exits with a permission error", async () => {
+it("returns structured onboarding status after a recorder permission race", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "memmy-permission-recorder-"));
   const recorder = path.join(root, "denied.mjs");
   fs.writeFileSync(recorder, 'console.error("human history recording failed: missing macOS permission: Input Monitoring, Accessibility. Grant it to the app."); process.exitCode = 1;');
@@ -96,11 +95,23 @@ it("opens Settings after the History recorder exits with a permission error", as
   });
   try {
     service.startObservation();
-    await vi.waitFor(() => expect(service.snapshot().observation.state).toBe("failed"));
-    expect(show).toHaveBeenCalledWith("computer-history", "accessibility");
-    expect(service.snapshot().observation.error).toContain("missing macOS permission");
+    await vi.waitFor(() => expect(service.snapshot().observation.state).toBe("stopped"));
+    expect(service.snapshot().observation.segmentId).toBeNull();
+    expect(show).not.toHaveBeenCalled();
+    expect(service.snapshot().observation).toMatchObject({ error: null, permissions: { supported: true, accessibility: false, inputMonitoring: false } });
   } finally {
     await service.shutdown();
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+ it("allows repeated explicit settings opens even after an automatic jump", async () => {
+  const open = vi.fn().mockResolvedValue(undefined);
+  const guide = new MacPermissionSettingsGuide("darwin", open);
+  await guide.show("computer-history", "inputMonitoring");
+  await guide.show("computer-history", "inputMonitoring");
+  expect(open).toHaveBeenCalledTimes(1);
+  await guide.show("computer-history", "inputMonitoring", true);
+  await guide.show("computer-history", "inputMonitoring", true);
+  expect(open).toHaveBeenCalledTimes(3);
 });

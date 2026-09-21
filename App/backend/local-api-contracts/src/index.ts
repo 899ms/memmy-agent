@@ -1128,6 +1128,18 @@ export type AsrTranscriptionResponse = z.infer<typeof AsrTranscriptionResponseSc
 export const AccountChannelSchema = z.enum(["email", "phone"]);
 export type AccountChannel = z.infer<typeof AccountChannelSchema>;
 
+/**
+ * Map the desktop language setting onto a language Memory can write in.
+ * `system` follows the package channel: phone/CN defaults to Chinese, email/intl to English.
+ */
+export function resolveMemoryLanguage(
+  language: string | undefined,
+  accountChannel?: AccountChannel | string
+): "zh-CN" | "en-US" {
+  if (language === "zh-CN" || language === "en-US") return language;
+  return accountChannel === "email" ? "en-US" : "zh-CN";
+}
+
 export const AccountLocaleSchema = z.enum(["zh", "en"]);
 export type AccountLocale = z.infer<typeof AccountLocaleSchema>;
 
@@ -1636,3 +1648,5 @@ export const TokenQuotaEligibilitySchema = z.object({
     latestReviewNote: z.string().nullable()
 });
 export type TokenQuotaEligibility = z.infer<typeof TokenQuotaEligibilitySchema>;
+export * from './desktop-screen-capture.js';
+export * from './computer-use-onboarding.js';

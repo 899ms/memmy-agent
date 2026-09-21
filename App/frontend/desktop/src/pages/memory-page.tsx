@@ -1,7 +1,9 @@
+import type { TokenUsageDto } from "@memmy/local-api-contracts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { buildMemorySubPageViewEvent } from "../analytics/page-view.js";
 import { useAnalytics } from "../analytics/use-analytics.js";
 import { useApiClients } from "../app/providers.js";
+import { isComputerHistorySupported } from "../app/computer-history-platform.js";
 import {
   PRODUCT_TOUR_MEMORY_LOGS_NAV_ANCHOR,
   PRODUCT_TOUR_MEMORY_NAV_ANCHOR,
@@ -15,6 +17,8 @@ import { useAppState } from "../state/app-state.js";
 import { writeSettingsTabHash } from "./settings-nav.js";
 import { SidebarResizeHandle, useCodexResizableSidebar } from "./sidebar-resize.js";
 import { AnalyticsSubPage } from "./memory/analytics-sub-page.js";
+import { readHistoryPermissionSetup } from "./memory/computer-history-permission-state.js";
+import { isComputerHistoryQuotaExhausted, useComputerHistoryQuotaRefresh } from "./memory/computer-history-quota.js";
 import { ComputerHistorySubPage } from "./memory/computer-history-sub-page.js";
 import { LogsSubPage } from "./memory/logs-sub-page.js";
 import {
@@ -107,13 +111,25 @@ export interface MemoryPageProps {
 
 export function MemoryPage(props: MemoryPageProps) {
   const { clients } = useApiClients();
-  const { dispatch } = useAppState();
+  const { state, dispatch } = useAppState();
   const { track, ready: analyticsReady } = useAnalytics();
   const prevSubPageRef = useRef<MemorySubPageId | null>(null);
   const referenceRequestIdRef = useRef(0);
-  const [activePage, setActivePage] = useState<MemorySubPageId>(() => props.initialSubPage ?? readInitialMemorySubPage());
+  const [selectedPage, setActivePage] = useState<MemorySubPageId>(() => props.initialSubPage ?? (isComputerHistorySupported() && readHistoryPermissionSetup() ? "computer-history" : readInitialMemorySubPage()));
+  // Stored selections, URL parameters and explicit navigation must all obey the
+  // same platform gate before mounting a page with polling/permission effects.
+  const activePage = supportedMemorySubPage(selectedPage);
   const [referenceRequest, setReferenceRequest] = useState<(MemoryReferenceOpenRequest & { page: MemoryReferencePage }) | null>(null);
   const client = clients?.memoryRuntime ?? null;
+  const historyQuotaExhausted = isComputerHistoryQuotaExhausted(state?.bootstrap);
+  const onHistoryQuotaUpdate = useCallback((usage: TokenUsageDto) => {
+    dispatch(appActions.tokenUsageUpdated(usage));
+  }, [dispatch]);
+  useComputerHistoryQuotaRefresh({
+    enabled: activePage === "computer-history" && state?.bootstrap?.app.userMode === "account",
+    client: clients?.config ?? null,
+    onUpdate: onHistoryQuotaUpdate,
+  });
 
   const handleSubPageChange = useCallback((page: MemorySubPageId) => {
     setReferenceRequest(null);
@@ -143,7 +159,7 @@ export function MemoryPage(props: MemoryPageProps) {
   const childByPage = useMemo<Record<MemorySubPageId, ReactNode>>(
     () => ({
       overview: <OverviewSubPage client={client} onNavigate={handleSubPageChange} />,
-      "computer-history": <ComputerHistorySubPage client={clients?.memmyAgent ?? null} />,
+      "computer-history": <ComputerHistorySubPage client={clients?.memmyAgent ?? null} quotaExhausted={historyQuotaExhausted} />,
       memories: (
         <MemoriesSubPage
           client={client}
@@ -181,7 +197,7 @@ export function MemoryPage(props: MemoryPageProps) {
       logs: <LogsSubPage client={client} />,
       sources: <SourcesSubPage />
     }),
-    [client, clients?.memmyAgent, dispatch, handleOpenMemoryReference, handleSubPageChange, referenceRequest]
+    [client, clients?.memmyAgent, dispatch, handleOpenMemoryReference, handleSubPageChange, referenceRequest, historyQuotaExhausted]
   );
 
   useEffect(() => {
@@ -223,6 +239,10 @@ function isMemorySubPageId(value: string | null): value is MemorySubPageId {
   return Boolean(value && memoryNavSections.some((section) => section.items.some((item) => item.id === value)));
 }
 
+function supportedMemorySubPage(page: MemorySubPageId): MemorySubPageId {
+  return page === "computer-history" && !isComputerHistorySupported() ? "overview" : page;
+}
+
 export function readMemorySubPage(storage: Storage | undefined): MemorySubPageId | null {
   const value = storage?.getItem(MEMORY_SUB_PAGE_STORAGE_KEY) ?? null;
   return isMemorySubPageId(value) ? value : null;
@@ -254,6 +274,7 @@ export interface MemoryPageViewProps {
 
 export function MemoryPageView(props: MemoryPageViewProps) {
   const { t } = useTranslation();
+  const activePage = supportedMemorySubPage(props.activePage);
   const childByPage = props.childByPage ?? createPreviewChildByPage(t);
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const sidebarResize = useCodexResizableSidebar("memmy.memory.sidebarWidth.codex.v2");
@@ -300,8 +321,8 @@ export function MemoryPageView(props: MemoryPageViewProps) {
               <span className="memory-page-section-label text-text-ink/45">{t(section.titleKey)}</span>
             </div>
             <nav className="space-y-1">
-              {section.items.map((item) => {
-                const active = props.activePage === item.id;
+              {section.items.filter((item) => item.id !== "computer-history" || isComputerHistorySupported()).map((item) => {
+                const active = activePage === item.id;
                 return (
                   <div key={item.id}>
                     <button
@@ -351,7 +372,7 @@ export function MemoryPageView(props: MemoryPageViewProps) {
         }`}
       >
         <header className="app-frame-content-topbar" />
-        <div className="app-frame-page-content min-h-0 flex-1 overflow-y-auto py-6">{childByPage[props.activePage]}</div>
+        <div className="app-frame-page-content min-h-0 flex-1 overflow-y-auto py-6">{childByPage[activePage]}</div>
       </div>
     </div>
   );
