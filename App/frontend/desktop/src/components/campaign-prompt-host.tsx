@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getCampaignActivityUrl } from "../app/campaign-prompt-url.js";
 import {
-  isAccountGuidanceDone,
+  isGuidanceDone,
   isCampaignPromptOpen,
   isCampaignPromptSessionReady,
   isCampaignPromptSurfaceReady,
@@ -24,7 +24,7 @@ function browserStorage(): Storage | undefined {
   return typeof window === "undefined" ? undefined : window.localStorage;
 }
 
-/** Shows the campaign reminder after account guidance, or after a BYOK Agent model is saved. */
+/** Shows the campaign reminder after guidance, for a signed-in account or BYOK. */
 export function CampaignPromptHost() {
   const { state } = useAppState();
   const { language } = useTranslation();
@@ -38,12 +38,11 @@ export function CampaignPromptHost() {
   const sessionReady = isCampaignPromptSessionReady({
     userMode: state.bootstrap?.app.userMode,
     accountUserId: state.account.userId,
-    accountGuidanceDone: isAccountGuidanceDone({
+    guidanceDone: isGuidanceDone({
       guidanceCompleted: readGuidanceCompleted(browserStorage()),
       onboardingCompleted: state.bootstrap?.onboarding?.completed === true,
       deferredGuidanceStep: readDeferredGuidanceStep(typeof window === "undefined" ? undefined : window.sessionStorage)
-    }),
-    byokConfigured: Boolean(state.modelConfig?.catalog?.modelAssignments.byok.agent.candidates.length)
+    })
   });
 
   useEffect(() => {

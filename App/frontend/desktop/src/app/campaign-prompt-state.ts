@@ -86,21 +86,23 @@ export function shouldOfferCampaignPrompt(
   return true;
 }
 
-/** Account mode needs a signed-in user who finished guidance. BYOK waits until an Agent model is saved. */
+/** Both modes wait for guidance. Account mode also needs a signed-in cloud user. */
 export function isCampaignPromptSessionReady(input: {
   userMode: UserMode | null | undefined;
   accountUserId: string | null | undefined;
-  accountGuidanceDone?: boolean;
-  byokConfigured?: boolean;
+  guidanceDone?: boolean;
 }): boolean {
-  if (input.userMode === "byok") {
-    return input.byokConfigured === true;
+  if (input.guidanceDone !== true) {
+    return false;
   }
-  return input.userMode === "account" && Boolean(input.accountUserId) && input.accountGuidanceDone === true;
+  if (input.userMode === "byok") {
+    return true;
+  }
+  return input.userMode === "account" && Boolean(input.accountUserId);
 }
 
-/** Guidance is done after the nickname step, or when a finished account has no tour still in progress. */
-export function isAccountGuidanceDone(input: {
+/** Guidance is done after the nickname step, or when onboarding finished and no tour is still in progress. */
+export function isGuidanceDone(input: {
   guidanceCompleted: boolean;
   onboardingCompleted: boolean;
   deferredGuidanceStep: string | null;

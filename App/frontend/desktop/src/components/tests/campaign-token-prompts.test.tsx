@@ -25,8 +25,7 @@ const mocks = vi.hoisted(() => ({
           landingUrl: "https://remote.example/ignored"
         }
       },
-      account: { userId: "user-1" as string | null },
-      modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] as string[] } } } } }
+      account: { userId: "user-1" as string | null }
     }
   }
 }));
@@ -53,7 +52,6 @@ describe("campaign and token credit prompts", () => {
     mocks.appState.state.bootstrap.app.userMode = "account";
     mocks.appState.state.account.userId = "user-1";
     writeGuidanceCompleted(window.localStorage);
-    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = [];
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -127,9 +125,10 @@ describe("campaign and token credit prompts", () => {
     expect(document.body.textContent).toContain("去官网参与活动");
   });
 
-  it("shows the prompt for BYOK after the agent model is saved", async () => {
+  it("shows the prompt for BYOK after guidance, without a cloud account id", async () => {
     mocks.appState.state.bootstrap.app.userMode = "byok";
     mocks.appState.state.account.userId = null;
+    window.localStorage.removeItem("memmy.guidanceCompleted");
 
     await act(async () => {
       root.render(
@@ -140,7 +139,7 @@ describe("campaign and token credit prompts", () => {
     });
     expect(document.body.textContent).not.toContain("去官网参与活动");
 
-    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = ["local-agent"];
+    writeGuidanceCompleted(window.localStorage);
     await act(async () => {
       root.render(
         <I18nProvider language="zh-CN">
