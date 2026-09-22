@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { resolveCloudClientConfig } from "../config/service-urls.js";
 import { loadCloudServiceEnv } from "../load-env.js";
 
 const roots: string[] = [];
@@ -14,10 +15,15 @@ describe("backend cloud-service env loading", () => {
   it("uses the packaged manifest instead of an inherited environment origin", () => {
     const root = fixtureRoot();
     const manifestPath = writeManifest(root, "https://manifest.example.test");
-    const env = { MEMMY_CLOUD_SERVICE: "https://external.example.test" };
+    const env = {
+      MEMMY_CLOUD_SERVICE: "https://external.example.test",
+      MEMMY_CLOUD_URL: "https://stale.example.test"
+    };
 
     expect(loadCloudServiceEnv({ env, manifestPath })).toBe(manifestPath);
     expect(env.MEMMY_CLOUD_SERVICE).toBe("https://manifest.example.test");
+    expect(env.MEMMY_CLOUD_URL).toBeUndefined();
+    expect(resolveCloudClientConfig(env).baseUrl).toBe("https://manifest.example.test");
   });
 
   it("loads only the allowlisted cloud service from a packaged manifest", () => {

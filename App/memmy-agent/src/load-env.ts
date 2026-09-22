@@ -70,6 +70,9 @@ export function loadCloudServiceEnv(options: LoadCloudServiceEnvOptions = {}): s
     env.MEMMY_CLOUD_SERVICE = cloudServiceFromDesktopRuntimeManifest(
       readFileSync(manifestPath, "utf8"),
     );
+    // MEMMY_CLOUD_URL is a development-only override. Do not let a stale
+    // value inherited from an older installation redirect a packaged app.
+    delete env.MEMMY_CLOUD_URL;
     return manifestPath;
   }
 

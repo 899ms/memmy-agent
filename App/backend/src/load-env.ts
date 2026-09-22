@@ -45,6 +45,9 @@ export function loadCloudServiceEnv(options: LoadCloudServiceEnvOptions = {}): s
       throw new Error("Packaged desktop runtime manifest cloud service must use HTTPS");
     }
     env.MEMMY_CLOUD_SERVICE = manifestService;
+    // MEMMY_CLOUD_URL is a development-only override. Do not let a stale
+    // value inherited from an older installation redirect a packaged app.
+    delete env.MEMMY_CLOUD_URL;
     return options.manifestPath;
   }
 
