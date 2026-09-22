@@ -1900,6 +1900,7 @@ describe("desktop packaged runtime boundaries", () => {
     const versionGuardSource = readFileSync(verifyPackageVersionPath, "utf8");
     const asarGuardSource = readFileSync(verifyPackagedAsarPath, "utf8");
 
+    expect(mainSource).toContain("loadCloudServiceEnv({");
     expect(mainSource).toContain('manifestPath: app.isPackaged ? join(import.meta.dirname, "desktop-edition.json") : undefined');
     for (const source of [macSource, winSource]) {
       expect(source).toContain("write-desktop-edition-manifest.mjs");
