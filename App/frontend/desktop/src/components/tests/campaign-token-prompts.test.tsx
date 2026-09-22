@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
       startup: { status: "ready" },
       navigation: { currentPath: "/main" },
       bootstrap: {
+        app: { userMode: "account" as const },
         lotteryStatus: {
           shouldShow: true,
           startAt: 1790121600000,
@@ -22,7 +23,8 @@ const mocks = vi.hoisted(() => ({
           serverNow: 1790456789000,
           landingUrl: "https://remote.example/ignored"
         }
-      }
+      },
+      account: { userId: "user-1" as string | null }
     }
   }
 }));
@@ -44,6 +46,10 @@ describe("campaign and token credit prompts", () => {
   beforeEach(() => {
     window.localStorage.clear();
     mocks.openExternalUrl.mockClear();
+    mocks.appState.state.startup.status = "ready";
+    mocks.appState.state.navigation.currentPath = "/main";
+    mocks.appState.state.bootstrap.app.userMode = "account";
+    mocks.appState.state.account.userId = "user-1";
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -77,6 +83,48 @@ describe("campaign and token credit prompts", () => {
 
     expect(mocks.openExternalUrl).toHaveBeenCalledWith("https://project-url.example/activity/");
     expect(mocks.openExternalUrl).not.toHaveBeenCalledWith("https://remote.example/ignored");
+  });
+
+  it("waits for an account or BYOK login in the same session", async () => {
+    mocks.appState.state.navigation.currentPath = "/welcome";
+    mocks.appState.state.bootstrap.app.userMode = "unset";
+    mocks.appState.state.account.userId = null;
+
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    mocks.appState.state.navigation.currentPath = "/main";
+    mocks.appState.state.bootstrap.app.userMode = "account";
+    mocks.appState.state.account.userId = "user-1";
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).toContain("去官网参与活动");
+  });
+
+  it("shows the prompt for BYOK without a cloud account id", async () => {
+    mocks.appState.state.bootstrap.app.userMode = "byok";
+    mocks.appState.state.account.userId = null;
+
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+
+    expect(document.body.textContent).toContain("去官网参与活动");
   });
 
   it("renders the large feature-update campaign dialog", () => {

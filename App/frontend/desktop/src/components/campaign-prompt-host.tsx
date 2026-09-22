@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getCampaignActivityUrl } from "../app/campaign-prompt-url.js";
 import {
   isCampaignPromptOpen,
+  isCampaignPromptSessionReady,
   isCampaignPromptSurfaceReady,
   markCampaignPromptActioned,
   markCampaignPromptDismissed,
@@ -21,7 +22,7 @@ function browserStorage(): Storage | undefined {
   return typeof window === "undefined" ? undefined : window.localStorage;
 }
 
-/** Shows the campaign reminder after boot, for logged-in and logged-out users. */
+/** Shows the campaign reminder after boot, once an account or BYOK session is active. */
 export function CampaignPromptHost() {
   const { state } = useAppState();
   const { language } = useTranslation();
@@ -31,6 +32,10 @@ export function CampaignPromptHost() {
   const surfaceReady = isCampaignPromptSurfaceReady({
     startupStatus: state.startup.status,
     currentPath: state.navigation.currentPath
+  });
+  const sessionReady = isCampaignPromptSessionReady({
+    userMode: state.bootstrap?.app.userMode,
+    accountUserId: state.account.userId
   });
 
   useEffect(() => {
@@ -56,7 +61,7 @@ export function CampaignPromptHost() {
       return;
     }
 
-    if (!surfaceReady) {
+    if (!surfaceReady || !sessionReady) {
       return;
     }
 
@@ -70,7 +75,7 @@ export function CampaignPromptHost() {
     offeredRef.current = true;
     markCampaignPromptShown(storage);
     setOpen(true);
-  }, [open, preview, state.bootstrap?.lotteryStatus, surfaceReady]);
+  }, [open, preview, sessionReady, state.bootstrap?.lotteryStatus, surfaceReady]);
 
   if (!open) {
     return null;

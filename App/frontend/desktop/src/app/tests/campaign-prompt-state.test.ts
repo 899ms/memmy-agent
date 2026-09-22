@@ -3,6 +3,7 @@ import type { LotteryStatus } from "@memmy/local-api-contracts";
 import {
   CAMPAIGN_PROMPT_MAX_SHOWS,
   CAMPAIGN_PROMPT_STORAGE_KEY,
+  isCampaignPromptSessionReady,
   isCampaignPromptSurfaceReady,
   markCampaignPromptActioned,
   markCampaignPromptDismissed,
@@ -80,6 +81,15 @@ describe("campaign prompt eligibility", () => {
     for (const currentPath of ["/welcome", "/login", "/main", "/onboarding", "/settings"]) {
       expect(isCampaignPromptSurfaceReady({ startupStatus: "ready", currentPath })).toBe(true);
     }
+  });
+
+  it("treats an authenticated account and BYOK as logged in", () => {
+    expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "user-1" })).toBe(true);
+    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null })).toBe(true);
+    expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: null })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "" })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "unset", accountUserId: null })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: undefined, accountUserId: "user-1" })).toBe(false);
   });
 
   it("waits for boot and skips the pet window", () => {

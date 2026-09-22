@@ -1,5 +1,5 @@
 /** Local persistence and eligibility for the Mid-Autumn campaign prompt. */
-import type { LotteryStatus } from "@memmy/local-api-contracts";
+import type { LotteryStatus, UserMode } from "@memmy/local-api-contracts";
 
 /** Build-time safety switch layered on top of the remote campaign status. */
 export const CAMPAIGN_PROMPT_ENABLED = true;
@@ -63,7 +63,7 @@ export function writeCampaignPromptState(
   storage.setItem(CAMPAIGN_PROMPT_STORAGE_KEY, JSON.stringify(state));
 }
 
-/** Whether the campaign prompt may be offered on this app open. Login is not required. */
+/** Whether the campaign prompt may be offered on this app open. */
 export function shouldOfferCampaignPrompt(
   state: CampaignPromptPersistedState,
   remoteStatus: LotteryStatus | null | undefined
@@ -86,7 +86,18 @@ export function shouldOfferCampaignPrompt(
   return true;
 }
 
-/** Surfaces that can show the campaign prompt after boot. Login is not required. */
+/** Account mode needs a cloud user id. BYOK has no cloud account, so the mode itself counts. */
+export function isCampaignPromptSessionReady(input: {
+  userMode: UserMode | null | undefined;
+  accountUserId: string | null | undefined;
+}): boolean {
+  if (input.userMode === "byok") {
+    return true;
+  }
+  return input.userMode === "account" && Boolean(input.accountUserId);
+}
+
+/** Surfaces that can show the campaign prompt after boot. */
 export function isCampaignPromptSurfaceReady(input: {
   startupStatus: string;
   currentPath: string;
