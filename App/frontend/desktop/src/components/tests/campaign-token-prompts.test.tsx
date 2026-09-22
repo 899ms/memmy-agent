@@ -3,7 +3,7 @@
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeGuidanceCompleted } from "../../app/routes.js";
+import { clearDeferredGuidanceStep, writeDeferredGuidanceStep, writeGuidanceCompleted } from "../../app/routes.js";
 import { I18nProvider } from "../../i18n/i18n-provider.js";
 import { CampaignPromptHost } from "../campaign-prompt-host.js";
 import { CampaignPrompt } from "../campaign-prompt.js";
@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
       navigation: { currentPath: "/main" },
       bootstrap: {
         app: { userMode: "account" as const },
+        onboarding: { completed: false },
         lotteryStatus: {
           shouldShow: true,
           startAt: 1790121600000,
@@ -25,7 +26,14 @@ const mocks = vi.hoisted(() => ({
           landingUrl: "https://remote.example/ignored"
         }
       },
-      account: { userId: "user-1" as string | null }
+      account: { userId: "user-1" as string | null },
+      modelConfig: {
+        catalog: {
+          modelAssignments: {
+            byok: { agent: { candidates: [] as string[] } }
+          }
+        }
+      }
     }
   }
 }));
@@ -46,11 +54,14 @@ describe("campaign and token credit prompts", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
     mocks.openExternalUrl.mockClear();
     mocks.appState.state.startup.status = "ready";
     mocks.appState.state.navigation.currentPath = "/main";
     mocks.appState.state.bootstrap.app.userMode = "account";
+    mocks.appState.state.bootstrap.onboarding.completed = false;
     mocks.appState.state.account.userId = "user-1";
+    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = [];
     writeGuidanceCompleted(window.localStorage);
     container = document.createElement("div");
     document.body.append(container);
@@ -128,6 +139,7 @@ describe("campaign and token credit prompts", () => {
   it("shows the prompt for BYOK after guidance, without a cloud account id", async () => {
     mocks.appState.state.bootstrap.app.userMode = "byok";
     mocks.appState.state.account.userId = null;
+    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = ["local-agent"];
     window.localStorage.removeItem("memmy.guidanceCompleted");
 
     await act(async () => {
@@ -149,6 +161,92 @@ describe("campaign and token credit prompts", () => {
     });
 
     expect(document.body.textContent).toContain("去官网参与活动");
+  });
+
+  it("waits out setup pages and an in-progress guide, then shows once", async () => {
+    mocks.appState.state.bootstrap.app.userMode = "byok";
+    mocks.appState.state.account.userId = null;
+    mocks.appState.state.navigation.currentPath = "/api-key";
+    window.localStorage.removeItem("memmy.guidanceCompleted");
+
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    mocks.appState.state.navigation.currentPath = "/welcome";
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    mocks.appState.state.navigation.currentPath = "/main";
+    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = ["local-agent"];
+    mocks.appState.state.bootstrap.onboarding.completed = true;
+    writeGuidanceCompleted(window.localStorage);
+    writeDeferredGuidanceStep(window.sessionStorage, "product_tour");
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    clearDeferredGuidanceStep(window.sessionStorage);
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).toContain("去官网参与活动");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+  });
+
+  it("shows once for an account that already finished onboarding", async () => {
+    window.localStorage.removeItem("memmy.guidanceCompleted");
+    mocks.appState.state.bootstrap.onboarding.completed = true;
+
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).toContain("去官网参与活动");
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
   });
 
   it("renders the large feature-update campaign dialog", () => {

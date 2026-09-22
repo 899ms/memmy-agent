@@ -24,7 +24,7 @@ function browserStorage(): Storage | undefined {
   return typeof window === "undefined" ? undefined : window.localStorage;
 }
 
-/** Shows the campaign reminder after guidance, for a signed-in account or BYOK. */
+/** Shows the campaign reminder after the user enters a workspace with guidance settled. */
 export function CampaignPromptHost() {
   const { state } = useAppState();
   const { language } = useTranslation();
@@ -38,6 +38,7 @@ export function CampaignPromptHost() {
   const sessionReady = isCampaignPromptSessionReady({
     userMode: state.bootstrap?.app.userMode,
     accountUserId: state.account.userId,
+    byokConfigured: Boolean(state.modelConfig?.catalog?.modelAssignments.byok.agent.candidates.length),
     guidanceDone: isGuidanceDone({
       guidanceCompleted: readGuidanceCompleted(browserStorage()),
       onboardingCompleted: state.bootstrap?.onboarding?.completed === true,

@@ -78,13 +78,13 @@ describe("campaign prompt eligibility", () => {
     expect(shouldOfferCampaignPrompt(emptyState(), remoteStatus({ serverNow: 1790812800000 }))).toBe(false);
   });
 
-  it("is ready on welcome, login, and signed-in routes after boot", () => {
-    for (const currentPath of ["/welcome", "/login", "/main", "/onboarding", "/settings"]) {
+  it("is ready only on workspace routes after boot", () => {
+    for (const currentPath of ["/main", "/memory", "/memory-sources", "/knowledge", "/tools", "/settings"]) {
       expect(isCampaignPromptSurfaceReady({ startupStatus: "ready", currentPath })).toBe(true);
     }
   });
 
-  it("treats an authenticated account and BYOK as logged in", () => {
+  it("treats an authenticated account and a configured BYOK session as logged in", () => {
     expect(isCampaignPromptSessionReady({
       userMode: "account",
       accountUserId: "user-1",
@@ -96,9 +96,26 @@ describe("campaign prompt eligibility", () => {
       guidanceDone: false
     })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "user-1" })).toBe(false);
-    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null, guidanceDone: true })).toBe(true);
+    expect(isCampaignPromptSessionReady({
+      userMode: "byok",
+      accountUserId: null,
+      byokConfigured: true,
+      guidanceDone: true
+    })).toBe(true);
+    expect(isCampaignPromptSessionReady({
+      userMode: "byok",
+      accountUserId: null,
+      byokConfigured: false,
+      guidanceDone: true
+    })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null, guidanceDone: true })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null })).toBe(false);
-    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null, guidanceDone: false })).toBe(false);
+    expect(isCampaignPromptSessionReady({
+      userMode: "byok",
+      accountUserId: null,
+      byokConfigured: true,
+      guidanceDone: false
+    })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: null })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "" })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "unset", accountUserId: null })).toBe(false);
@@ -109,8 +126,18 @@ describe("campaign prompt eligibility", () => {
     expect(isGuidanceDone({
       guidanceCompleted: true,
       onboardingCompleted: false,
-      deferredGuidanceStep: "product_tour"
+      deferredGuidanceStep: null
     })).toBe(true);
+    expect(isGuidanceDone({
+      guidanceCompleted: true,
+      onboardingCompleted: false,
+      deferredGuidanceStep: "product_tour"
+    })).toBe(false);
+    expect(isGuidanceDone({
+      guidanceCompleted: true,
+      onboardingCompleted: true,
+      deferredGuidanceStep: "improvement"
+    })).toBe(false);
     expect(isGuidanceDone({
       guidanceCompleted: false,
       onboardingCompleted: true,
@@ -128,9 +155,20 @@ describe("campaign prompt eligibility", () => {
     })).toBe(false);
   });
 
-  it("waits for boot and skips the pet window", () => {
-    expect(isCampaignPromptSurfaceReady({ startupStatus: "loading", currentPath: "/welcome" })).toBe(false);
-    expect(isCampaignPromptSurfaceReady({ startupStatus: "ready", currentPath: "/pet" })).toBe(false);
+  it("waits for boot and skips setup, login, onboarding, and the pet window", () => {
+    expect(isCampaignPromptSurfaceReady({ startupStatus: "loading", currentPath: "/main" })).toBe(false);
+    for (const currentPath of [
+      "/welcome",
+      "/login",
+      "/token-detail",
+      "/onboarding",
+      "/api-key",
+      "/api-key-models",
+      "/api-key-optional",
+      "/pet"
+    ]) {
+      expect(isCampaignPromptSurfaceReady({ startupStatus: "ready", currentPath })).toBe(false);
+    }
   });
 
   it("stops after one show or a site visit", () => {
