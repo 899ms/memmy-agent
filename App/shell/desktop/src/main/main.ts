@@ -2850,55 +2850,45 @@ try {
   $appDir = Split-Path -Parent $AppExe
   Write-MemmyUpdateLog "install dir $appDir"
 
-  $id = 0
-  if ([int]::TryParse($AppPid, [ref]$id)) {
+  # The app launches memory-service with the same Memmy.exe binary (run-as-node).
+  # Only the PID handed off by the app identifies the process that must exit; a
+  # path-wide scan would mistake a memory-service child/orphan for the app.
+  $appProcessId = 0
+  [void][int]::TryParse($AppPid, [ref]$appProcessId)
+  function Get-MemmyUpdateAppProcesses {
+    if ($appProcessId -le 0) {
+      return @()
+    }
+    return @(Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)
+  }
+
+  if ($appProcessId -gt 0) {
+    Write-MemmyUpdateLog ('waiting for handed-off app PID; ignoring memory-service descendants: ' + $appProcessId)
     $deadline = (Get-Date).AddSeconds(60)
     do {
-      $process = Get-Process -Id $id -ErrorAction SilentlyContinue
-      if ($null -eq $process) {
+      $running = @(Get-MemmyUpdateAppProcesses)
+      if ($running.Count -eq 0) {
         break
       }
       Start-Sleep -Milliseconds ${WINDOWS_UPDATE_INSTALL_PROCESS_POLL_MS}
     } while ((Get-Date) -lt $deadline)
+  } else {
+    Write-MemmyUpdateLog 'app PID unavailable; continuing without a path-wide process scan'
   }
 
-  $deadline = (Get-Date).AddSeconds(30)
-  do {
-    $running = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-      try {
-        $_.Path -eq $AppExe
-      } catch {
-        $false
-      }
-    })
-    if ($running.Count -eq 0) {
-      Write-MemmyUpdateLog 'all app processes exited'
-      break
-    }
-    Write-MemmyUpdateLog ('waiting app processes: ' + (($running | ForEach-Object { $_.Id }) -join ','))
-    Start-Sleep -Milliseconds ${WINDOWS_UPDATE_INSTALL_PROCESS_POLL_MS}
-  } while ((Get-Date) -lt $deadline)
+  $running = @(Get-MemmyUpdateAppProcesses)
+  if ($running.Count -eq 0) {
+    Write-MemmyUpdateLog 'all handed-off app processes exited'
+  }
 
-  $runningBeforeInstall = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    try {
-      $_.Path -eq $AppExe
-    } catch {
-      $false
-    }
-  })
+  $runningBeforeInstall = @(Get-MemmyUpdateAppProcesses)
 
   if ($runningBeforeInstall.Count -gt 0) {
     Write-MemmyUpdateLog ('app processes still running before install; waiting: ' + (($runningBeforeInstall | ForEach-Object { $_.Id }) -join ','))
     $deadline = (Get-Date).AddSeconds(120)
     do {
       Start-Sleep -Milliseconds ${WINDOWS_UPDATE_INSTALL_PROCESS_POLL_MS}
-      $runningBeforeInstall = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-        try {
-          $_.Path -eq $AppExe
-        } catch {
-          $false
-        }
-      })
+      $runningBeforeInstall = @(Get-MemmyUpdateAppProcesses)
       if ($runningBeforeInstall.Count -eq 0) {
         Write-MemmyUpdateLog 'app processes exited before install'
         break
