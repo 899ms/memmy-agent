@@ -34,15 +34,6 @@ export interface LoadCloudServiceEnvOptions {
 /** Loads the public cloud-service origin without allowing packaged raw env files. */
 export function loadCloudServiceEnv(options: LoadCloudServiceEnvOptions = {}): string | null {
   const env = options.env ?? process.env;
-  if (Object.prototype.hasOwnProperty.call(env, "MEMMY_CLOUD_SERVICE")) {
-    const externalValue = env.MEMMY_CLOUD_SERVICE?.trim();
-    if (externalValue) {
-      env.MEMMY_CLOUD_SERVICE = externalValue;
-      return "environment";
-    }
-    delete env.MEMMY_CLOUD_SERVICE;
-  }
-
   if (options.manifestPath !== undefined) {
     if (!existsSync(options.manifestPath)) {
       throw new Error("Packaged desktop runtime manifest is missing");
@@ -55,6 +46,15 @@ export function loadCloudServiceEnv(options: LoadCloudServiceEnvOptions = {}): s
     }
     env.MEMMY_CLOUD_SERVICE = manifestService;
     return options.manifestPath;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(env, "MEMMY_CLOUD_SERVICE")) {
+    const externalValue = env.MEMMY_CLOUD_SERVICE?.trim();
+    if (externalValue) {
+      env.MEMMY_CLOUD_SERVICE = externalValue;
+      return "environment";
+    }
+    delete env.MEMMY_CLOUD_SERVICE;
   }
 
   const moduleDir = options.moduleDir ?? dirname(fileURLToPath(import.meta.url));

@@ -11,13 +11,13 @@ afterEach(() => {
 });
 
 describe("backend cloud-service env loading", () => {
-  it("keeps an explicit environment origin ahead of the packaged manifest", () => {
+  it("uses the packaged manifest instead of an inherited environment origin", () => {
     const root = fixtureRoot();
     const manifestPath = writeManifest(root, "https://manifest.example.test");
     const env = { MEMMY_CLOUD_SERVICE: "https://external.example.test" };
 
-    expect(loadCloudServiceEnv({ env, manifestPath })).toBe("environment");
-    expect(env.MEMMY_CLOUD_SERVICE).toBe("https://external.example.test");
+    expect(loadCloudServiceEnv({ env, manifestPath })).toBe(manifestPath);
+    expect(env.MEMMY_CLOUD_SERVICE).toBe("https://manifest.example.test");
   });
 
   it("loads only the allowlisted cloud service from a packaged manifest", () => {
