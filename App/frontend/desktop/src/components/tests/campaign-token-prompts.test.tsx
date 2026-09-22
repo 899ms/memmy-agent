@@ -3,6 +3,7 @@
 import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeGuidanceCompleted } from "../../app/routes.js";
 import { I18nProvider } from "../../i18n/i18n-provider.js";
 import { CampaignPromptHost } from "../campaign-prompt-host.js";
 import { CampaignPrompt } from "../campaign-prompt.js";
@@ -24,7 +25,8 @@ const mocks = vi.hoisted(() => ({
           landingUrl: "https://remote.example/ignored"
         }
       },
-      account: { userId: "user-1" as string | null }
+      account: { userId: "user-1" as string | null },
+      modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] as string[] } } } } }
     }
   }
 }));
@@ -50,6 +52,8 @@ describe("campaign and token credit prompts", () => {
     mocks.appState.state.navigation.currentPath = "/main";
     mocks.appState.state.bootstrap.app.userMode = "account";
     mocks.appState.state.account.userId = "user-1";
+    writeGuidanceCompleted(window.localStorage);
+    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = [];
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -102,6 +106,17 @@ describe("campaign and token credit prompts", () => {
     mocks.appState.state.navigation.currentPath = "/main";
     mocks.appState.state.bootstrap.app.userMode = "account";
     mocks.appState.state.account.userId = "user-1";
+    window.localStorage.removeItem("memmy.guidanceCompleted");
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    writeGuidanceCompleted(window.localStorage);
     await act(async () => {
       root.render(
         <I18nProvider language="zh-CN">
@@ -112,10 +127,20 @@ describe("campaign and token credit prompts", () => {
     expect(document.body.textContent).toContain("去官网参与活动");
   });
 
-  it("shows the prompt for BYOK without a cloud account id", async () => {
+  it("shows the prompt for BYOK after the agent model is saved", async () => {
     mocks.appState.state.bootstrap.app.userMode = "byok";
     mocks.appState.state.account.userId = null;
 
+    await act(async () => {
+      root.render(
+        <I18nProvider language="zh-CN">
+          <CampaignPromptHost />
+        </I18nProvider>
+      );
+    });
+    expect(document.body.textContent).not.toContain("去官网参与活动");
+
+    mocks.appState.state.modelConfig.catalog.modelAssignments.byok.agent.candidates = ["local-agent"];
     await act(async () => {
       root.render(
         <I18nProvider language="zh-CN">

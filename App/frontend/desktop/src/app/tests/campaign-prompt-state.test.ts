@@ -3,6 +3,7 @@ import type { LotteryStatus } from "@memmy/local-api-contracts";
 import {
   CAMPAIGN_PROMPT_MAX_SHOWS,
   CAMPAIGN_PROMPT_STORAGE_KEY,
+  isAccountGuidanceDone,
   isCampaignPromptSessionReady,
   isCampaignPromptSurfaceReady,
   markCampaignPromptActioned,
@@ -84,12 +85,47 @@ describe("campaign prompt eligibility", () => {
   });
 
   it("treats an authenticated account and BYOK as logged in", () => {
-    expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "user-1" })).toBe(true);
-    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null })).toBe(true);
+    expect(isCampaignPromptSessionReady({
+      userMode: "account",
+      accountUserId: "user-1",
+      accountGuidanceDone: true
+    })).toBe(true);
+    expect(isCampaignPromptSessionReady({
+      userMode: "account",
+      accountUserId: "user-1",
+      accountGuidanceDone: false
+    })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "user-1" })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null, byokConfigured: true })).toBe(true);
+    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null })).toBe(false);
+    expect(isCampaignPromptSessionReady({ userMode: "byok", accountUserId: null, byokConfigured: false })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: null })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "account", accountUserId: "" })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: "unset", accountUserId: null })).toBe(false);
     expect(isCampaignPromptSessionReady({ userMode: undefined, accountUserId: "user-1" })).toBe(false);
+  });
+
+  it("treats finished guidance as done, and an in-progress tour as not done", () => {
+    expect(isAccountGuidanceDone({
+      guidanceCompleted: true,
+      onboardingCompleted: false,
+      deferredGuidanceStep: "product_tour"
+    })).toBe(true);
+    expect(isAccountGuidanceDone({
+      guidanceCompleted: false,
+      onboardingCompleted: true,
+      deferredGuidanceStep: null
+    })).toBe(true);
+    expect(isAccountGuidanceDone({
+      guidanceCompleted: false,
+      onboardingCompleted: true,
+      deferredGuidanceStep: "product_tour"
+    })).toBe(false);
+    expect(isAccountGuidanceDone({
+      guidanceCompleted: false,
+      onboardingCompleted: false,
+      deferredGuidanceStep: null
+    })).toBe(false);
   });
 
   it("waits for boot and skips the pet window", () => {
