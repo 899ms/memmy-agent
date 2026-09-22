@@ -1124,6 +1124,12 @@ describe("desktop packaged runtime boundaries", () => {
     expect(mainSource).toContain('ipcMain.removeHandler("memmy:export-diagnostics-report")');
   });
 
+  it("stops the Windows memory service by default during app exit", () => {
+    const mainSource = readFileSync(mainSourcePath, "utf8");
+    expect(mainSource).toContain('process.platform === "win32"');
+    expect(mainSource).toContain("stopMemoryServiceOnExit");
+  });
+
   it("opens Computer History Markdown through a restricted desktop bridge", () => {
     const mainSource = readFileSync(mainSourcePath, "utf8");
     const preloadSource = readFileSync(preloadSourcePath, "utf8");
