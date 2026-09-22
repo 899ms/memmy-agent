@@ -5188,9 +5188,13 @@ async function cleanupBeforeQuit(): Promise<void> {
 
 function readStopMemoryServiceOnExitSetting(): boolean {
   try {
-    return localBackend?.getAppSettings().stopMemoryServiceOnExit ?? false;
+    // Windows updates and reboot handoffs cannot safely leave a detached
+    // Memmy.exe memory-service behind: it shares the app executable and can
+    // be mistaken for the desktop process by the next launch/update.
+    return localBackend?.getAppSettings().stopMemoryServiceOnExit
+      ?? process.platform === "win32";
   } catch {
-    return false;
+    return process.platform === "win32";
   }
 }
 
