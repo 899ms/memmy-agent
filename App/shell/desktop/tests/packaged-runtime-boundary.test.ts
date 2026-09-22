@@ -1233,6 +1233,10 @@ describe("desktop packaged runtime boundaries", () => {
     expect(mainSource).toContain("$arguments = @('/S', '--updated', '/currentuser', ('/D=' + $appDir))");
     expect(mainSource).not.toContain("app reopened before install; deferring update");
     expect(mainSource).toContain("app processes still running before install; waiting");
+    expect(mainSource).toContain("function Get-MemmyUpdateAppProcesses");
+    expect(mainSource).toContain("$AppPid");
+    expect(mainSource).toContain("memory-service");
+    expect(mainSource).not.toContain("$_.Path -eq $AppExe");
     expect(mainSource).toContain("function hideMacDockForPreparedUpdateInstall");
     expect(mainSource).toContain("app.dock?.hide()");
     expect(mainSource).toContain("isManagedUpdateInstallerRunning");
