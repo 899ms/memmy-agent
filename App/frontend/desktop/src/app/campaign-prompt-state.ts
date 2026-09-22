@@ -86,42 +86,52 @@ export function shouldOfferCampaignPrompt(
   return true;
 }
 
-/** Both modes wait for guidance. Account mode also needs a signed-in cloud user. */
+const CAMPAIGN_PROMPT_WORKSPACE_PATHS = new Set([
+  "/main",
+  "/memory",
+  "/memory-sources",
+  "/knowledge",
+  "/tools",
+  "/settings"
+]);
+
+/** Account needs a signed-in user. BYOK needs a saved Agent model. Both wait until guidance has settled. */
 export function isCampaignPromptSessionReady(input: {
   userMode: UserMode | null | undefined;
   accountUserId: string | null | undefined;
+  byokConfigured?: boolean;
   guidanceDone?: boolean;
 }): boolean {
   if (input.guidanceDone !== true) {
     return false;
   }
   if (input.userMode === "byok") {
-    return true;
+    return input.byokConfigured === true;
   }
   return input.userMode === "account" && Boolean(input.accountUserId);
 }
 
-/** Guidance is done after the nickname step, or when onboarding finished and no tour is still in progress. */
+/** Guidance has settled when no deferred step is showing, and this machine finished the guide or onboarding is already complete. */
 export function isGuidanceDone(input: {
   guidanceCompleted: boolean;
   onboardingCompleted: boolean;
   deferredGuidanceStep: string | null;
 }): boolean {
+  if (input.deferredGuidanceStep != null) {
+    return false;
+  }
   if (input.guidanceCompleted) {
     return true;
   }
-  return input.onboardingCompleted && input.deferredGuidanceStep == null;
+  return input.onboardingCompleted;
 }
 
-/** Surfaces that can show the campaign prompt after boot. */
+/** Workspace routes that can show the campaign prompt after boot. Setup, login, onboarding, and the pet window wait. */
 export function isCampaignPromptSurfaceReady(input: {
   startupStatus: string;
   currentPath: string;
 }): boolean {
-  if (input.startupStatus !== "ready") {
-    return false;
-  }
-  return input.currentPath !== "/pet";
+  return input.startupStatus === "ready" && CAMPAIGN_PROMPT_WORKSPACE_PATHS.has(input.currentPath);
 }
 
 /** Records that the prompt was shown (counts toward the max of 1). */
