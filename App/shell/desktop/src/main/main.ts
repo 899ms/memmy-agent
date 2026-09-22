@@ -98,6 +98,7 @@ import {
   resolveStartupSplashHtml,
   resolveStartupSplashLanguage,
   resolveUpdateSplashHtml,
+  shouldQuitWhenAllWindowsClosed,
   type StartupSplashLanguage
 } from "./startup-splash.js";
 import {
@@ -5025,13 +5026,13 @@ app.on("activate", () => {
 
 app.on("window-all-closed", () => {
   if (isQuitting) return;
-  if (!isBootReady) {
-    void writePackagedStartupLog(`boot:window-all-closed-ignored:${bootStage}`);
+  if (!shouldQuitWhenAllWindowsClosed(process.platform, isBootReady)) {
+    if (!isBootReady) {
+      void writePackagedStartupLog(`boot:window-all-closed-ignored:${bootStage}`);
+    }
     return;
   }
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });
 
 app.on("before-quit", (event) => {
